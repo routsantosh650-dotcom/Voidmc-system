@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import apiRouter from './server/api';
 
 async function startServer() {
@@ -14,8 +15,11 @@ async function startServer() {
   // Mount API router
   app.use('/api', apiRouter);
 
-  if (!isProd) {
-    // Development mode: Mount Vite middleware
+  const distDir = path.resolve(process.cwd(), 'dist');
+  const hasBuiltDist = fs.existsSync(path.join(distDir, 'index.html'));
+
+  if (!isProd || !hasBuiltDist) {
+    console.log('[VoidMC Server] Mounting dynamic Vite middleware (Development / On-the-fly mode)...');
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -23,8 +27,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // Production mode: Serve pre-built client assets
-    const distDir = path.resolve(process.cwd(), 'dist');
+    console.log('[VoidMC Server] Serving static built assets from dist directory...');
     app.use(express.static(distDir));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distDir, 'index.html'));
