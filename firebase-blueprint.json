@@ -1,0 +1,140 @@
+{
+  "entities": {
+    "StaffAccount": {
+      "title": "Staff Account",
+      "description": "Registered VoidMC staff member with login credentials, role, and permissions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "minecraftIgn": { "type": "string" },
+        "role": { "type": "string" },
+        "department": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "salt": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "joinedDate": { "type": "string" },
+        "isAdmin": { "type": "boolean" },
+        "lastActive": { "type": "string" }
+      },
+      "required": ["id", "username", "name", "minecraftIgn", "role", "department", "passwordHash", "salt", "status", "isAdmin"]
+    },
+    "AttendanceRecord": {
+      "title": "Attendance Record",
+      "description": "Daily shift check-in record for a staff member.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "staffId": { "type": "string" },
+        "staffName": { "type": "string" },
+        "staffRole": { "type": "string" },
+        "minecraftIgn": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string", "enum": ["present", "absent"] },
+        "shiftNotes": { "type": "string" },
+        "shiftDurationHours": { "type": "number" },
+        "proofUrl": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "timeFormatted": { "type": "string" }
+      },
+      "required": ["id", "staffId", "staffName", "staffRole", "minecraftIgn", "date", "status", "timestamp", "timeFormatted"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Server bulletin or staff directive published by administrators.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "author": { "type": "string" },
+        "authorRole": { "type": "string" },
+        "tag": { "type": "string" },
+        "isPinned": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["id", "title", "content", "author", "authorRole", "tag", "isPinned", "createdAt", "timestamp"]
+    },
+    "DisciplinaryStrike": {
+      "title": "Disciplinary Strike",
+      "description": "Staff disciplinary strike record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "staffId": { "type": "string" },
+        "staffName": { "type": "string" },
+        "reason": { "type": "string" },
+        "issuedBy": { "type": "string" },
+        "severity": { "type": "string", "enum": ["minor", "moderate", "severe"] },
+        "date": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "acknowledged": { "type": "boolean" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "staffId", "staffName", "reason", "issuedBy", "severity", "date", "timestamp", "acknowledged", "active"]
+    },
+    "LeaveApplication": {
+      "title": "Leave Application",
+      "description": "Staff leave of absence or vacation request.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "staffId": { "type": "string" },
+        "staffName": { "type": "string" },
+        "staffRole": { "type": "string" },
+        "type": { "type": "string", "enum": ["leave", "loa", "resignation"] },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "adminResponse": { "type": "string" }
+      },
+      "required": ["id", "staffId", "staffName", "staffRole", "type", "startDate", "endDate", "reason", "status", "createdAt", "timestamp"]
+    },
+    "SystemSetting": {
+      "title": "System Settings",
+      "description": "Global server configuration parameters.",
+      "type": "object",
+      "properties": {
+        "serverIp": { "type": "string" },
+        "maintenanceMode": { "type": "boolean" },
+        "requireAttendanceProof": { "type": "boolean" },
+        "autoSessionTimeoutHours": { "type": "number" },
+        "allowSelfAttendance": { "type": "boolean" }
+      },
+      "required": ["serverIp", "maintenanceMode", "allowSelfAttendance"]
+    }
+  },
+  "firestore": {
+    "/staff/{staffId}": {
+      "schema": "StaffAccount",
+      "description": "Collection of staff member accounts."
+    },
+    "/attendance/{attendanceId}": {
+      "schema": "AttendanceRecord",
+      "description": "Collection of daily attendance check-in records."
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Collection of server directives and staff bulletins."
+    },
+    "/strikes/{strikeId}": {
+      "schema": "DisciplinaryStrike",
+      "description": "Collection of disciplinary strikes."
+    },
+    "/applications/{applicationId}": {
+      "schema": "LeaveApplication",
+      "description": "Collection of leave and LOA applications."
+    },
+    "/settings/{settingId}": {
+      "schema": "SystemSetting",
+      "description": "Global settings and configuration document."
+    }
+  }
+}

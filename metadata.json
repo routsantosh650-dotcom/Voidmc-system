@@ -1,0 +1,6 @@
+{
+  "name": "VoidMC SMP Staff Command & Attendance System",
+  "description": "Comprehensive staff command management system for VoidMC SMP featuring live attendance tracking, owner strike disciplinary management with real-time alerts, roles directory, and admin controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

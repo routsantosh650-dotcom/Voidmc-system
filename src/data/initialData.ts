@@ -1,0 +1,118 @@
+import { StaffRole, StaffMember, Announcement, ActivityItem, StaffApplication } from '../types';
+
+export const INITIAL_ROLES: StaffRole[] = [
+  { id: 'owner', name: 'OWNER', memberCount: 1, color: 'red', iconType: 'crown', department: 'Executive', isOwnerRole: true, isAdminRole: true },
+  { id: 'co-owner', name: 'CO OWNER', memberCount: 1, color: 'red', iconType: 'shield', department: 'Executive', isOwnerRole: true, isAdminRole: true },
+  { id: 'staff-manager', name: 'STAFF MANAGER', memberCount: 1, color: 'purple', iconType: 'users', department: 'Management', isAdminRole: true },
+  { id: 'manager', name: 'MANAGER', memberCount: 0, color: 'orange', iconType: 'briefcase', department: 'Management', isAdminRole: true },
+  { id: 'ast-manager', name: 'AST. MANAGER', memberCount: 0, color: 'purple', iconType: 'user-check', department: 'Management', isAdminRole: true },
+  { id: 'sr-admin', name: 'SR. ADMIN', memberCount: 0, color: 'indigo', iconType: 'shield-alert', department: 'Administration', isAdminRole: true },
+  { id: 'admin', name: 'ADMIN', memberCount: 0, color: 'blue', iconType: 'shield', department: 'Administration', isAdminRole: true },
+  { id: 'jr-admin', name: 'JR. ADMIN', memberCount: 0, color: 'green', iconType: 'shield', department: 'Administration', isAdminRole: true },
+  { id: 'mc-mods', name: 'MC MODS', memberCount: 1, color: 'green', iconType: 'sword', department: 'Moderation' },
+  { id: 'mc-helper', name: 'MC HELPER', memberCount: 1, color: 'lime', iconType: 'help-circle', department: 'Support' },
+  { id: 'marketing-head', name: 'MARKETING HEAD', memberCount: 0, color: 'orange', iconType: 'megaphone', department: 'Marketing' },
+  { id: 'sr-mkt-staff', name: 'SR. MKT STAFF', memberCount: 0, color: 'yellow', iconType: 'trending-up', department: 'Marketing' },
+  { id: 'jr-mkt-staff', name: 'JR. MKT STAFF', memberCount: 0, color: 'yellow', iconType: 'share-2', department: 'Marketing' },
+  { id: 'head-developer', name: 'HEAD DEVELOPER', memberCount: 0, color: 'magenta', iconType: 'code', department: 'Development', isAdminRole: true },
+  { id: 'sr-developer', name: 'SR. DEVELOPER', memberCount: 0, color: 'pink', iconType: 'terminal', department: 'Development' },
+  { id: 'developer', name: 'DEVELOPER', memberCount: 0, color: 'pink', iconType: 'cpu', department: 'Development' },
+  { id: 'dev-team', name: 'DEV TEAM', memberCount: 0, color: 'purple', iconType: 'layers', department: 'Development' },
+  { id: 'mc-staff', name: 'MC STAFF', memberCount: 0, color: 'lime', iconType: 'user', department: 'Moderation' },
+];
+
+export const INITIAL_STAFF_MEMBERS: StaffMember[] = [
+  {
+    id: 'staff-owner-ansh',
+    username: 'elite ansh',
+    name: 'Elite ansh',
+    minecraftIgn: 'Elite_Ansh',
+    role: 'OWNER',
+    department: 'Executive',
+    avatarUrl: 'https://minotar.net/helm/Elite_Ansh/100.png',
+    status: 'active',
+    joinedDate: '2024-01-01',
+    isAdmin: true,
+    lastActive: 'Online',
+  },
+  {
+    id: 'staff-coowner-obito',
+    username: 'obito uchiha',
+    name: 'obito uchiha',
+    minecraftIgn: 'Obito_Uchiha',
+    role: 'CO OWNER',
+    department: 'Executive',
+    avatarUrl: 'https://minotar.net/helm/Obito_Uchiha/100.png',
+    status: 'active',
+    joinedDate: '2024-01-05',
+    isAdmin: true,
+    lastActive: 'Online',
+  },
+  {
+    id: 'staff-manager-santosh',
+    username: 'santosh rout',
+    name: 'Santosh Rout',
+    minecraftIgn: 'Santosh_Rout',
+    role: 'STAFF MANAGER',
+    department: 'Management',
+    avatarUrl: 'https://minotar.net/helm/Santosh_Rout/100.png',
+    status: 'active',
+    joinedDate: '2024-01-10',
+    isAdmin: true,
+    lastActive: 'Online',
+  },
+  {
+    id: 'staff-mod-shadow',
+    username: 'shadow',
+    name: 'ShadowMC',
+    minecraftIgn: 'ShadowMC_',
+    role: 'MC MODS',
+    department: 'Moderation',
+    avatarUrl: 'https://minotar.net/helm/ShadowMC_/100.png',
+    status: 'active',
+    joinedDate: '2024-02-01',
+    isAdmin: false,
+    lastActive: '10 mins ago',
+  },
+  {
+    id: 'staff-helper-aura',
+    username: 'auraknight',
+    name: 'AuraKnight',
+    minecraftIgn: 'Aura_Knight',
+    role: 'MC HELPER',
+    department: 'Support',
+    avatarUrl: 'https://minotar.net/helm/Aura_Knight/100.png',
+    status: 'active',
+    joinedDate: '2024-03-01',
+    isAdmin: false,
+    lastActive: '1 hour ago',
+  },
+];
+
+export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
+  {
+    id: 'ann-welcome',
+    title: 'VoidMC SMP Staff Command System Online',
+    content: 'Welcome to the official VoidMC SMP Staff Management & Command Portal. All staff members are required to log their daily shift attendance under the Attendance section.',
+    author: 'Santosh Rout',
+    authorRole: 'STAFF MANAGER',
+    tag: 'IMPORTANT',
+    isPinned: true,
+    createdAt: 'Today',
+    timestamp: Date.now(),
+  },
+];
+
+export const INITIAL_ACTIVITIES: ActivityItem[] = [
+  {
+    id: 'act-init',
+    text: 'VoidMC Staff Command online',
+    subtext: 'System initialized with clean slate records & 3 authorized admin accounts',
+    user: 'System',
+    timeAgo: 'Just now',
+    timestamp: Date.now(),
+    type: 'system',
+  },
+];
+
+export const INITIAL_APPLICATIONS: StaffApplication[] = [];
