@@ -1,12 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
-
-const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-const firestoreDb = getFirestore(firebaseApp);
 
 export interface StaffAccount {
   id: string;
@@ -392,32 +386,6 @@ class Database {
 
   constructor() {
     this.data = this.load();
-    this.syncFromCloud();
-  }
-
-  public async syncFromCloud() {
-    try {
-      const docRef = doc(firestoreDb, 'portal_database', 'state');
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const cloudData = snap.data() as DatabaseSchema;
-        if (cloudData && Array.isArray(cloudData.staff)) {
-          this.data = cloudData;
-          this.saveDirect(cloudData);
-          console.log('[DB] Successfully synced persistent state from Firebase Firestore.');
-        }
-      } else {
-        await setDoc(docRef, this.data);
-        console.log('[DB] Uploaded initial database state to Firebase Firestore.');
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('NOT_FOUND') || msg.includes('not-found') || msg.includes('offline')) {
-        console.log('[DB] Operating in local robust storage mode (Cloud Firestore syncing standby).');
-      } else {
-        console.warn('[DB] Cloud sync notice:', msg);
-      }
-    }
   }
 
   private load(): DatabaseSchema {
@@ -489,14 +457,6 @@ class Database {
 
   public save() {
     this.saveDirect(this.data);
-    try {
-      const docRef = doc(firestoreDb, 'portal_database', 'state');
-      setDoc(docRef, this.data).catch(() => {
-        // Silently ignore cloud sync failures if database not active
-      });
-    } catch {
-      // Silently ignore
-    }
   }
 
   public get(): DatabaseSchema {
