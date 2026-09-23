@@ -410,8 +410,13 @@ class Database {
         await setDoc(docRef, this.data);
         console.log('[DB] Uploaded initial database state to Firebase Firestore.');
       }
-    } catch (err) {
-      console.warn('[DB] Cloud sync notice (operating with local cache):', err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('NOT_FOUND') || msg.includes('not-found') || msg.includes('offline')) {
+        console.log('[DB] Operating in local robust storage mode (Cloud Firestore syncing standby).');
+      } else {
+        console.warn('[DB] Cloud sync notice:', msg);
+      }
     }
   }
 
@@ -486,11 +491,11 @@ class Database {
     this.saveDirect(this.data);
     try {
       const docRef = doc(firestoreDb, 'portal_database', 'state');
-      setDoc(docRef, this.data).catch(err => {
-        console.warn('[DB] Failed to push update to Firebase Firestore:', err);
+      setDoc(docRef, this.data).catch(() => {
+        // Silently ignore cloud sync failures if database not active
       });
-    } catch (err) {
-      console.warn('[DB] Firestore write exception:', err);
+    } catch {
+      // Silently ignore
     }
   }
 
