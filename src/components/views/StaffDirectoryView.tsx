@@ -24,14 +24,33 @@ export const StaffDirectoryView: React.FC<StaffDirectoryViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
 
-  const filteredStaff = staffList.filter(member => {
+  const filteredStaff = staffList
+  .filter(member => {
     const matchesSearch =
       member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       member.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
       member.minecraftIgn.toLowerCase().includes(searchQuery.toLowerCase()) ||
       member.role.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesRole = roleFilter === 'all' || member.role.toUpperCase() === roleFilter.toUpperCase();
+
+    const matchesRole =
+      roleFilter === 'all' ||
+      member.role.toUpperCase() === roleFilter.toUpperCase();
+
     return matchesSearch && matchesRole;
+  })
+  .sort((a, b) => {
+    const priority: Record<string, number> = {
+      'elite ansh': 1,
+      'obito uchiha': 2,
+      'santosh rout': 3,
+      'ayeshaa': 4,
+      'proscholar': 5,
+    };
+
+    const aPriority = priority[a.name.toLowerCase()] ?? 999;
+    const bPriority = priority[b.name.toLowerCase()] ?? 999;
+
+    return aPriority - bPriority;
   });
 
   return (
