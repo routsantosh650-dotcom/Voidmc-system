@@ -145,6 +145,8 @@ export const AUTHORIZED_ADMIN_NAMES = [
   'Elite ansh',
   'obito uchiha',
   'Santosh Rout',
+  'Ayeshaa',
+  'Proscholar',
 ];
 
 export function isAuthorizedAdmin(identifier: string): boolean {
@@ -507,10 +509,73 @@ class Database {
   private readonly documentName = 'database';
 
   constructor() {
-    // Start with clean in-memory data.
-    // Firestore data is loaded by init().
-    this.data = getCleanSeedData();
+  // Start with clean in-memory data.
+  // Firestore data is loaded by init().
+  this.data = getCleanSeedData();
   }
+
+    private ensureAuthorizedAdminAccounts(): void {
+    const adminAccounts = [
+      {
+        username: 'ayeshaa',
+        name: 'Ayeshaa',
+        minecraftIgn: 'Ayeshaa',
+        password: process.env.AYESHAA_ADMIN_PASSWORD,
+      },
+      {
+        username: 'proscholar',
+        name: 'Proscholar',
+        minecraftIgn: 'Proscholar',
+        password: process.env.PROSCHOLAR_ADMIN_PASSWORD,
+      },
+    ];
+
+    for (const admin of adminAccounts) {
+      const existing = this.data.staff.find(
+        (staff) =>
+          staff.username.toLowerCase() ===
+            admin.username.toLowerCase() ||
+          staff.name.toLowerCase() ===
+            admin.name.toLowerCase()
+      );
+
+      if (existing) {
+        existing.isAdmin = true;
+        existing.role = 'MANAGER';
+        existing.department = 'Management';
+        continue;
+      }
+
+      if (!admin.password) {
+        console.warn(
+          `[VoidMC DB] Password missing for ${admin.username}. Admin account was not created.`
+        );
+        continue;
+      }
+
+      const pw = hashPassword(admin.password);
+
+      this.data.staff.push({
+        id: `staff-admin-${admin.username}`,
+        username: admin.username,
+        name: admin.name,
+        minecraftIgn: admin.minecraftIgn,
+        role: 'MANAGER',
+        department: 'Management',
+        passwordHash: pw.hash,
+        salt: pw.salt,
+        avatarUrl:
+          `https://minotar.net/helm/${encodeURIComponent(
+            admin.minecraftIgn
+          )}/100.png`,
+        status: 'active',
+        joinedDate:
+          new Date().toISOString().split('T')[0],
+        isAdmin: true,
+        lastActive: 'Never',
+      });
+    }
+    }
 
   // ----------------------------------------------------------
   // FIREBASE INITIALIZATION
@@ -577,12 +642,15 @@ class Database {
         );
       }
 
+            // Add/verify authorized admin accounts.
+      this.ensureAuthorizedAdminAccounts();
+
       // Synchronize old attendance records.
       this.syncPastAttendance();
 
       // Save synchronization back to Firestore.
       await this.saveAsync();
-
+      
       console.log(
         '[DB] Firebase Firestore is ready.'
       );
