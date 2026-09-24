@@ -497,7 +497,7 @@ router.post('/staff', requireAdmin, (req: AuthenticatedRequest, res: Response) =
     department: department ? department.trim() : 'Staff Team',
     passwordHash: pw.hash,
     salt: pw.salt,
-    avatarUrl: `https://minotar.net/helm/${encodeURIComponent(minecraftIgn.trim())}/100.png`,
+    avatarUrl: 'https://minotar.net/helm/Steve/100.png',
     status: 'active',
     joinedDate: new Date().toISOString().split('T')[0],
     isAdmin: false, // Only the 3 authorized accounts can ever have admin rights
