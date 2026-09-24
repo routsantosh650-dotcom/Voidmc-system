@@ -540,11 +540,19 @@ class Database {
       );
 
       if (existing) {
-        existing.isAdmin = true;
-        existing.role = 'MANAGER';
-        existing.department = 'Management';
-        continue;
-      }
+  existing.isAdmin = true;
+  existing.role = 'MANAGER';
+  existing.department = 'Management';
+
+  // Sync password from Render Environment Variable
+  if (admin.password) {
+    const pw = hashPassword(admin.password);
+    existing.passwordHash = pw.hash;
+    existing.salt = pw.salt;
+  }
+
+  continue;
+}
 
       if (!admin.password) {
         console.warn(
