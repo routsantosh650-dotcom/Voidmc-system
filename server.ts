@@ -2,9 +2,11 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import apiRouter from './server/api';
+import { db } from './server/db';
 
 async function startServer() {
   const app = express();
+  await db.init();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   const isProd = process.env.NODE_ENV === 'production';
 
