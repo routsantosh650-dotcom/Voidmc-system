@@ -574,6 +574,17 @@ router.post('/staff/:id/reset-password', requireAdmin, (req: AuthenticatedReques
     return res.status(404).json({ error: 'Staff member not found.' });
   }
 
+  // Admin accounts can only change their own password.
+  const targetIsAdmin =
+    isAuthorizedAdmin(staff.name) ||
+    isAuthorizedAdmin(staff.username);
+
+  if (targetIsAdmin && staff.id !== req.user!.id) {
+    return res.status(403).json({
+      error: 'You cannot change another administrator\'s password. Administrators can only change their own password.',
+    });
+  }
+  
   const pw = hashPassword(newPassword);
   staff.passwordHash = pw.hash;
   staff.salt = pw.salt;
