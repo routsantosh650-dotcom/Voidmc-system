@@ -1,6 +1,6 @@
-import fs from 'fs';
-import path from 'path';
 import crypto from 'crypto';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { Firestore, getFirestore } from 'firebase-admin/firestore';
 
 export interface StaffAccount {
   id: string;
@@ -14,7 +14,7 @@ export interface StaffAccount {
   avatarUrl: string;
   status: 'active' | 'suspended';
   joinedDate: string;
-  isAdmin: boolean; // Only true for the 3 authorized accounts
+  isAdmin: boolean;
   lastActive: string;
 }
 
@@ -41,7 +41,7 @@ export interface AttendanceEntry {
   staffRole: string;
   minecraftIgn: string;
   avatarUrl: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   status: 'present' | 'absent';
   shiftNotes?: string;
   shiftDurationHours?: number;
@@ -84,13 +84,19 @@ export interface StrikeRecord {
 
 export interface SystemNotification {
   id: string;
-  targetUserId?: string; // If null/empty, broadcast to all
+  targetUserId?: string;
   title: string;
   message: string;
-  type: 'announcement' | 'strike' | 'staff' | 'attendance' | 'security' | 'system';
+  type:
+    | 'announcement'
+    | 'strike'
+    | 'staff'
+    | 'attendance'
+    | 'security'
+    | 'system';
   timestamp: number;
   timeAgo: string;
-  readBy: string[]; // List of userIds who marked as read
+  readBy: string[];
   linkTab?: string;
 }
 
@@ -103,8 +109,8 @@ export interface StaffLeaveApplication {
   avatarUrl: string;
   type: 'LOA' | 'Leave';
   reason: string;
-  startDate: string; // YYYY-MM-DD
-  endDate: string;   // YYYY-MM-DD
+  startDate: string;
+  endDate: string;
   additionalDetails?: string;
   status: 'pending' | 'approved' | 'rejected';
   submittedAt: string;
@@ -131,43 +137,92 @@ export interface DatabaseSchema {
   };
 }
 
-const DB_FILE = path.resolve(process.cwd(), 'data', 'voidmc_db.json');
+// ============================================================
+// AUTHORIZED ADMINS
+// ============================================================
 
-// Exact 3 authorized administrators
-export const AUTHORIZED_ADMIN_NAMES = ['Elite ansh', 'obito uchiha', 'Santosh Rout'];
+export const AUTHORIZED_ADMIN_NAMES = [
+  'Elite ansh',
+  'obito uchiha',
+  'Santosh Rout',
+];
 
 export function isAuthorizedAdmin(identifier: string): boolean {
   if (!identifier) return false;
+
   const clean = identifier.trim().toLowerCase();
-  return AUTHORIZED_ADMIN_NAMES.some(name => {
+
+  return AUTHORIZED_ADMIN_NAMES.some((name) => {
     const target = name.toLowerCase();
-    return clean === target ||
-      clean.replace(/[\s_]+/g, '') === target.replace(/[\s_]+/g, '');
+
+    return (
+      clean === target ||
+      clean.replace(/[\s_]+/g, '') ===
+        target.replace(/[\s_]+/g, '')
+    );
   });
 }
 
-// Password hashing with crypto
-export function hashPassword(password: string, salt?: string): { hash: string; salt: string } {
-  const generatedSalt = salt || crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, generatedSalt, 1000, 64, 'sha512').toString('hex');
-  return { hash, salt: generatedSalt };
+// ============================================================
+// PASSWORD HASHING
+// ============================================================
+
+export function hashPassword(
+  password: string,
+  salt?: string
+): { hash: string; salt: string } {
+  const generatedSalt =
+    salt || crypto.randomBytes(16).toString('hex');
+
+  const hash = crypto
+    .pbkdf2Sync(
+      password,
+      generatedSalt,
+      1000,
+      64,
+      'sha512'
+    )
+    .toString('hex');
+
+  return {
+    hash,
+    salt: generatedSalt,
+  };
 }
 
-export function verifyPassword(password: string, hash: string, salt: string): boolean {
-  const testHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+export function verifyPassword(
+  password: string,
+  hash: string,
+  salt: string
+): boolean {
+  const testHash = crypto
+    .pbkdf2Sync(
+      password,
+      salt,
+      1000,
+      64,
+      'sha512'
+    )
+    .toString('hex');
+
   return testHash === hash;
 }
 
-// Exact India Standard Time (IST / Asia/Kolkata) Helper
+// ============================================================
+// IST TIME
+// ============================================================
+
 export const IST_TIMEZONE = 'Asia/Kolkata';
 
-export function getISTDateInfo(date: Date = new Date()): {
-  dateStr: string; // YYYY-MM-DD in IST
-  timeStr: string; // "08:00:00 PM" in IST
-  timeShortStr: string; // "08:00 PM" in IST
-  fullStr: string; // "Sep 23, 2026, 08:00 PM IST"
+export function getISTDateInfo(
+  date: Date = new Date()
+): {
+  dateStr: string;
+  timeStr: string;
+  timeShortStr: string;
+  fullStr: string;
   year: number;
-  month: number; // 0-indexed
+  month: number;
   day: number;
   timestamp: number;
 } {
@@ -178,9 +233,11 @@ export function getISTDateInfo(date: Date = new Date()): {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(date); // Output: YYYY-MM-DD
+  }).format(date);
 
-  const [yearStr, monthStr, dayStr] = dateStr.split('-');
+  const [yearStr, monthStr, dayStr] =
+    dateStr.split('-');
+
   const year = parseInt(yearStr, 10);
   const month = parseInt(monthStr, 10) - 1;
   const day = parseInt(dayStr, 10);
@@ -200,34 +257,54 @@ export function getISTDateInfo(date: Date = new Date()): {
     hour12: true,
   }).format(date);
 
-  const fullStr = new Intl.DateTimeFormat('en-US', {
-    timeZone: IST_TIMEZONE,
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  }).format(date) + ' IST';
+  const fullStr =
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: IST_TIMEZONE,
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).format(date) + ' IST';
 
-  return { dateStr, timeStr, timeShortStr, fullStr, year, month, day, timestamp };
+  return {
+    dateStr,
+    timeStr,
+    timeShortStr,
+    fullStr,
+    year,
+    month,
+    day,
+    timestamp,
+  };
 }
 
-// Generate past attendance records for the current month up to yesterday in IST (marked Present for all staff)
-export function generatePastAttendanceRecords(staffList: StaffAccount[]): AttendanceEntry[] {
+// ============================================================
+// PAST ATTENDANCE
+// ============================================================
+
+export function generatePastAttendanceRecords(
+  staffList: StaffAccount[]
+): AttendanceEntry[] {
   const records: AttendanceEntry[] = [];
+
   const istInfo = getISTDateInfo();
+
   const currentYear = istInfo.year;
-  const currentMonth = istInfo.month; // 0-indexed
+  const currentMonth = istInfo.month;
   const todayDate = istInfo.day;
 
-  // All previous days in current month in IST (from day 1 to today - 1)
   for (let day = 1; day < todayDate; day++) {
-    const dayStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const pastDate = new Date(`${dayStr}T18:00:00+05:30`);
+    const dayStr =
+      `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+    const pastDate =
+      new Date(`${dayStr}T18:00:00+05:30`);
+
     const timestamp = pastDate.getTime();
 
-    staffList.forEach(staff => {
+    staffList.forEach((staff) => {
       records.push({
         id: `att_${staff.id}_${dayStr}`,
         staffId: staff.id,
@@ -237,26 +314,40 @@ export function generatePastAttendanceRecords(staffList: StaffAccount[]): Attend
         avatarUrl: staff.avatarUrl,
         date: dayStr,
         status: 'present',
-        shiftNotes: 'Standard staff duty shift - Present',
+        shiftNotes:
+          'Standard staff duty shift - Present',
         shiftDurationHours: 2,
         proofUrl: '',
         timestamp,
         timeFormatted: '06:00 PM IST',
         reviewedBy: 'System Auto-Credit',
-        reviewedAt: `${dayStr} 06:00 PM IST`,
+        reviewedAt:
+          `${dayStr} 06:00 PM IST`,
       });
     });
   }
 
-  // Sort descending by timestamp
-  return records.sort((a, b) => b.timestamp - a.timestamp);
+  return records.sort(
+    (a, b) => b.timestamp - a.timestamp
+  );
 }
 
+// ============================================================
+// CLEAN SEED DATA
+// ============================================================
+
 export function getCleanSeedData(): DatabaseSchema {
-  const ownerPass = hashPassword('VoidOwner@2024');
-  const coOwnerPass = hashPassword('VoidCoOwner@2024');
-  const staffMgrPass = hashPassword('VoidManager@2024');
-  const normalStaffPass = hashPassword('Staff@Void123');
+  const ownerPass =
+    hashPassword('VoidOwner@2024');
+
+  const coOwnerPass =
+    hashPassword('VoidCoOwner@2024');
+
+  const staffMgrPass =
+    hashPassword('VoidManager@2024');
+
+  const normalStaffPass =
+    hashPassword('Staff@Void123');
 
   const now = Date.now();
 
@@ -270,12 +361,14 @@ export function getCleanSeedData(): DatabaseSchema {
       department: 'Executive',
       passwordHash: ownerPass.hash,
       salt: ownerPass.salt,
-      avatarUrl: 'https://minotar.net/helm/Elite_Ansh/100.png',
+      avatarUrl:
+        'https://minotar.net/helm/Elite_Ansh/100.png',
       status: 'active',
       joinedDate: '2024-01-01',
       isAdmin: true,
       lastActive: 'Just now',
     },
+
     {
       id: 'staff-coowner-obito',
       username: 'obito uchiha',
@@ -285,12 +378,14 @@ export function getCleanSeedData(): DatabaseSchema {
       department: 'Executive',
       passwordHash: coOwnerPass.hash,
       salt: coOwnerPass.salt,
-      avatarUrl: 'https://minotar.net/helm/Obito_Uchiha/100.png',
+      avatarUrl:
+        'https://minotar.net/helm/Obito_Uchiha/100.png',
       status: 'active',
       joinedDate: '2024-01-05',
       isAdmin: true,
       lastActive: 'Just now',
     },
+
     {
       id: 'staff-manager-santosh',
       username: 'santosh rout',
@@ -300,12 +395,14 @@ export function getCleanSeedData(): DatabaseSchema {
       department: 'Management',
       passwordHash: staffMgrPass.hash,
       salt: staffMgrPass.salt,
-      avatarUrl: 'https://minotar.net/helm/Santosh_Rout/100.png',
+      avatarUrl:
+        'https://minotar.net/helm/Santosh_Rout/100.png',
       status: 'active',
       joinedDate: '2024-01-10',
       isAdmin: true,
       lastActive: 'Just now',
     },
+
     {
       id: 'staff-mod-shadow',
       username: 'shadow',
@@ -315,12 +412,14 @@ export function getCleanSeedData(): DatabaseSchema {
       department: 'Moderation',
       passwordHash: normalStaffPass.hash,
       salt: normalStaffPass.salt,
-      avatarUrl: 'https://minotar.net/helm/ShadowMC_/100.png',
+      avatarUrl:
+        'https://minotar.net/helm/ShadowMC_/100.png',
       status: 'active',
       joinedDate: '2024-02-01',
       isAdmin: false,
       lastActive: '10 mins ago',
     },
+
     {
       id: 'staff-helper-aura',
       username: 'auraknight',
@@ -330,144 +429,333 @@ export function getCleanSeedData(): DatabaseSchema {
       department: 'Support',
       passwordHash: normalStaffPass.hash,
       salt: normalStaffPass.salt,
-      avatarUrl: 'https://minotar.net/helm/Aura_Knight/100.png',
+      avatarUrl:
+        'https://minotar.net/helm/Aura_Knight/100.png',
       status: 'active',
       joinedDate: '2024-03-01',
       isAdmin: false,
       lastActive: '1 hour ago',
-    }
+    },
   ];
 
-  const pastAttendance = generatePastAttendanceRecords(seedStaff);
+  const pastAttendance =
+    generatePastAttendanceRecords(seedStaff);
 
   return {
     staff: seedStaff,
+
     sessions: [],
+
     attendance: pastAttendance,
+
     announcements: [
       {
         id: 'ann-welcome',
-        title: 'VoidMC SMP Staff Command System Online',
-        content: 'Welcome to the official VoidMC SMP Staff Management & Command Portal. All staff members are required to log their daily shift attendance under the Attendance section.',
+        title:
+          'VoidMC SMP Staff Command System Online',
+        content:
+          'Welcome to the official VoidMC SMP Staff Management & Command Portal. All staff members are required to log their daily shift attendance under the Attendance section.',
         author: 'Santosh Rout',
         authorRole: 'STAFF MANAGER',
         tag: 'IMPORTANT',
         isPinned: true,
         createdAt: 'Today',
         timestamp: now,
-      }
+      },
     ],
+
     strikes: [],
+
     notifications: [
       {
         id: 'notif-welcome',
         title: 'System Initialized',
-        message: 'VoidMC SMP Staff Command initialized with clean records and secure authentication.',
+        message:
+          'VoidMC SMP Staff Command initialized with clean records and secure authentication.',
         type: 'system',
         timestamp: now,
         timeAgo: 'Just now',
         readBy: [],
         linkTab: 'dashboard',
-      }
+      },
     ],
+
     applications: [],
+
     settings: {
       serverIp: 'play.voidmc.fun',
       maintenanceMode: false,
       requireAttendanceProof: false,
       autoSessionTimeoutHours: 24,
       allowSelfAttendance: true,
-    }
+    },
   };
 }
 
+// ============================================================
+// FIRESTORE DATABASE
+// ============================================================
+
 class Database {
   private data: DatabaseSchema;
+  private firestore: Firestore | null = null;
+
+  // Keeps writes in order.
+  private saveQueue: Promise<void> = Promise.resolve();
+
+  private readonly collectionName = 'voidmc';
+  private readonly documentName = 'database';
 
   constructor() {
-    this.data = this.load();
+    // Start with clean in-memory data.
+    // Firestore data is loaded by init().
+    this.data = getCleanSeedData();
   }
 
-  private load(): DatabaseSchema {
+  // ----------------------------------------------------------
+  // FIREBASE INITIALIZATION
+  // ----------------------------------------------------------
+
+  public async init(): Promise<void> {
     try {
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        const parsed = JSON.parse(raw);
-        // Ensure structure validity
-        if (parsed && Array.isArray(parsed.staff)) {
-          parsed.applications = Array.isArray(parsed.applications) ? parsed.applications : [];
-          parsed.announcements = Array.isArray(parsed.announcements) ? parsed.announcements : [];
-          parsed.strikes = Array.isArray(parsed.strikes) ? parsed.strikes : [];
-          parsed.notifications = Array.isArray(parsed.notifications) ? parsed.notifications : [];
-          parsed.sessions = Array.isArray(parsed.sessions) ? parsed.sessions : [];
+      const serviceAccountPath =
+        process.env.FIREBASE_SERVICE_ACCOUNT_PATH ||
+        '/etc/secrets/firebase-service-account.json';
 
-          // Process and synchronize monthly attendance:
-          // Mark all previous recorded days as Present for everyone, and keep today blank.
-          const now = new Date();
-          const currentYear = now.getFullYear();
-          const currentMonth = now.getMonth();
-          const todayDate = now.getDate();
-          const todayStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(todayDate).padStart(2, '0')}`;
+      console.log(
+        `[DB] Loading Firebase service account from: ${serviceAccountPath}`
+      );
 
-          const existingAtt: AttendanceEntry[] = Array.isArray(parsed.attendance) ? parsed.attendance : [];
+      const raw = await import('fs').then((fs) =>
+        fs.promises.readFile(
+          serviceAccountPath,
+          'utf8'
+        )
+      );
 
-          // 1. Update any existing past attendance records to 'present'
-          existingAtt.forEach(a => {
-            if (a.date !== todayStr) {
-              a.status = 'present';
-            }
-          });
+      const serviceAccount =
+        JSON.parse(raw);
 
-          // 2. Ensure all staff have Present records for days 1 to (todayDate - 1)
-          const pastSeeds = generatePastAttendanceRecords(parsed.staff);
-          pastSeeds.forEach(seedEntry => {
-            const exists = existingAtt.some(a => a.staffId === seedEntry.staffId && a.date === seedEntry.date);
-            if (!exists) {
-              existingAtt.push(seedEntry);
-            }
-          });
+      const firebaseApp =
+        getApps().length > 0
+          ? getApps()[0]
+          : initializeApp({
+              credential: cert(serviceAccount),
+            });
 
-          // Sort descending
-          parsed.attendance = existingAtt.sort((a, b) => b.timestamp - a.timestamp);
+      this.firestore =
+        getFirestore(firebaseApp);
 
-          this.saveDirect(parsed);
-          return parsed;
-        }
+      // Allow optional fields with undefined values.
+      this.firestore.settings({
+        ignoreUndefinedProperties: true,
+      });
+
+      const docRef = this.firestore
+        .collection(this.collectionName)
+        .doc(this.documentName);
+
+      const snapshot = await docRef.get();
+
+      if (snapshot.exists) {
+        const firestoreData =
+          snapshot.data() as Partial<DatabaseSchema>;
+
+        this.data =
+          this.normalizeData(firestoreData);
+
+        console.log(
+          '[DB] Firestore database loaded successfully.'
+        );
+      } else {
+        this.data = getCleanSeedData();
+
+        await docRef.set(this.data);
+
+        console.log(
+          '[DB] Firestore database did not exist. Clean database created.'
+        );
       }
-    } catch (err) {
-      console.error('[DB] Failed to load database file, creating fresh clean database:', err);
-    }
 
+      // Synchronize old attendance records.
+      this.syncPastAttendance();
+
+      // Save synchronization back to Firestore.
+      await this.saveAsync();
+
+      console.log(
+        '[DB] Firebase Firestore is ready.'
+      );
+    } catch (error) {
+      console.error(
+        '[DB] Firebase initialization failed:',
+        error
+      );
+
+      throw error;
+    }
+  }
+
+  // ----------------------------------------------------------
+  // NORMALIZE FIRESTORE DATA
+  // ----------------------------------------------------------
+
+  private normalizeData(
+    input: Partial<DatabaseSchema>
+  ): DatabaseSchema {
     const clean = getCleanSeedData();
-    this.saveDirect(clean);
-    return clean;
+
+    return {
+      staff: Array.isArray(input.staff)
+        ? input.staff
+        : clean.staff,
+
+      sessions: Array.isArray(input.sessions)
+        ? input.sessions
+        : [],
+
+      attendance: Array.isArray(input.attendance)
+        ? input.attendance
+        : [],
+
+      announcements:
+        Array.isArray(input.announcements)
+          ? input.announcements
+          : [],
+
+      strikes: Array.isArray(input.strikes)
+        ? input.strikes
+        : [],
+
+      notifications:
+        Array.isArray(input.notifications)
+          ? input.notifications
+          : [],
+
+      applications:
+        Array.isArray(input.applications)
+          ? input.applications
+          : [],
+
+      settings: {
+        ...clean.settings,
+        ...(input.settings || {}),
+      },
+    };
   }
 
-  private saveDirect(data: DatabaseSchema) {
-    try {
-      const dir = path.dirname(DB_FILE);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+  // ----------------------------------------------------------
+  // ATTENDANCE SYNCHRONIZATION
+  // ----------------------------------------------------------
+
+  private syncPastAttendance(): void {
+    const istInfo = getISTDateInfo();
+
+    const todayStr = istInfo.dateStr;
+
+    const existing =
+      Array.isArray(this.data.attendance)
+        ? this.data.attendance
+        : [];
+
+    // All old dates become present.
+    existing.forEach((entry) => {
+      if (entry.date !== todayStr) {
+        entry.status = 'present';
       }
-      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
-    } catch (err) {
-      console.error('[DB] Failed to save database file:', err);
-    }
+    });
+
+    // Make sure every staff member has
+    // a present record for previous days.
+    const pastSeeds =
+      generatePastAttendanceRecords(
+        this.data.staff
+      );
+
+    pastSeeds.forEach((seed) => {
+      const exists = existing.some(
+        (entry) =>
+          entry.staffId === seed.staffId &&
+          entry.date === seed.date
+      );
+
+      if (!exists) {
+        existing.push(seed);
+      }
+    });
+
+    this.data.attendance = existing.sort(
+      (a, b) => b.timestamp - a.timestamp
+    );
   }
 
-  public save() {
-    this.saveDirect(this.data);
+  // ----------------------------------------------------------
+  // SAVE
+  // ----------------------------------------------------------
+
+  public save(): void {
+    if (!this.firestore) {
+      console.warn(
+        '[DB] save() called before Firestore initialization.'
+      );
+      return;
+    }
+
+    this.saveQueue = this.saveQueue
+      .then(async () => {
+        await this.saveAsync();
+      })
+      .catch((error) => {
+        console.error(
+          '[DB] Firestore save failed:',
+          error
+        );
+      });
   }
+
+  private async saveAsync(): Promise<void> {
+    if (!this.firestore) {
+      throw new Error(
+        'Firestore is not initialized.'
+      );
+    }
+
+    const docRef = this.firestore
+      .collection(this.collectionName)
+      .doc(this.documentName);
+
+    await docRef.set(this.data);
+
+    console.log(
+      '[DB] Data saved to Firestore.'
+    );
+  }
+
+  // ----------------------------------------------------------
+  // GET
+  // ----------------------------------------------------------
 
   public get(): DatabaseSchema {
     return this.data;
   }
 
-  public resetAll() {
+  // ----------------------------------------------------------
+  // RESET
+  // ----------------------------------------------------------
+
+  public resetAll(): DatabaseSchema {
     this.data = getCleanSeedData();
+
+    this.syncPastAttendance();
+
     this.save();
+
     return this.data;
   }
 }
+
+// ============================================================
+// SINGLE DATABASE INSTANCE
+// ============================================================
 
 export const db = new Database();
