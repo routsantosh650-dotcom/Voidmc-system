@@ -325,17 +325,13 @@ router.get('/auth/sessions', optionalAuth, (req: AuthenticatedRequest, res: Resp
   const database = db.get();
   // Filter active sessions
   const activeSessions = database.sessions.filter(s => s.status === 'active');
-  const isAdminUser = req.user && (
-    isAuthorizedAdmin(req.user.name) ||
-    isAuthorizedAdmin(req.user.username) ||
-    req.user.role === 'OWNER' ||
-    req.user.role === 'CO OWNER' ||
-    req.user.role === 'STAFF MANAGER' ||
-    req.isAdmin
-  );
+const isIpViewer = !!req.user && (
+  isAuthorizedAdmin(req.user.name) ||
+  isAuthorizedAdmin(req.user.username)
+);
 
   const sanitizedSessions = activeSessions.map(sess => {
-    if (isAdminUser) {
+    if (isIpViewer) {
       return sess;
     }
     // For non-admin, mask sensitive IP
