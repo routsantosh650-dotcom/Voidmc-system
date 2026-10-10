@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useVoidMC } from '../../context/VoidMCContext';
+import { StaffMember, AttendanceRecord } from '../../types';
 import {
   Calendar,
   CheckCircle2,
@@ -7,149 +8,131 @@ import {
   Clock,
   Trash2,
   Search,
-  Filter,
   UserCheck,
   AlertCircle,
-  Check,
   Shield,
   ChevronLeft,
   ChevronRight,
   CalendarDays,
-  FileSpreadsheet,
+  Users,
+  Percent,
+  FileText,
+  Sparkles,
+  Check,
+  X,
+  RotateCcw,
 } from 'lucide-react';
-import { getTodayIST, formatISTTime, formatISTDateReadable } from '../../utils/timeUtils';
+import { getTodayIST, formatISTTime } from '../../utils/timeUtils';
 
 export const AttendanceView: React.FC = () => {
   const {
     currentUser,
     isAdmin,
+    staffList,
     attendanceRecords,
     markAttendance,
+    adminMarkAttendance,
     deleteAttendance,
     clearAllAttendance,
     setShowStaffLoginModal,
   } = useVoidMC();
 
   const todayIST = useMemo(() => getTodayIST(), []);
+  const todayStr = todayIST.dateStr;
 
-  // Mark Form State
+  // Selected Staff Profile (Tapped by user)
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(
+    currentUser?.id || (staffList.length > 0 ? staffList[0].id : null)
+  );
+  const detailSectionRef = useRef<HTMLDivElement>(null);
+
+  // Search for Staff Profiles Grid
+  const [profileSearch, setProfileSearch] = useState('');
+
+  // Self Check-In Form State
   const [shiftHours, setShiftHours] = useState<number>(2);
   const [shiftNotes, setShiftNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Month navigation for Monthly Attendance section (in IST)
+  // Month navigation (in IST)
   const [selectedYear, setSelectedYear] = useState<number>(todayIST.year);
   const [selectedMonth, setSelectedMonth] = useState<number>(todayIST.month); // 0-indexed
 
-  // Search & Filter for All-Staff Table (Admin only)
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'present' | 'absent'>('all');
+  // Individual Log scope ('month' | 'all')
+  const [logScope, setLogScope] = useState<'month' | 'all'>('month');
+
+  // Admin date action popover / modal state
+  const [adminSelectedDate, setAdminSelectedDate] = useState<string | null>(null);
+  const [adminNotesInput, setAdminNotesInput] = useState('');
+  const [adminHoursInput, setAdminHoursInput] = useState<number>(2);
+  const [adminMarking, setAdminMarking] = useState(false);
+
+  // Confirm Clear All Modal
   const [confirmClearModal, setConfirmClearModal] = useState(false);
 
-  // Today's date string YYYY-MM-DD in IST
-  const todayStr = todayIST.dateStr;
+  // Selected Staff object
+  const selectedStaff: StaffMember | null = useMemo(() => {
+    if (!staffList.length) return null;
+    if (selectedStaffId) {
+      const found = staffList.find(s => s.id === selectedStaffId);
+      if (found) return found;
+    }
+    return currentUser || staffList[0];
+  }, [staffList, selectedStaffId, currentUser]);
 
-  // Current user's records
-  const myRecords = useMemo(() => {
-    if (!currentUser) return [];
-    return attendanceRecords.filter(r => r.staffId === currentUser.id);
-  }, [attendanceRecords, currentUser]);
-
-  // Check if current user marked attendance today
+  // Current logged-in user's record today
   const myRecordToday = useMemo(() => {
-    return myRecords.find(r => r.date === todayStr);
-  }, [myRecords, todayStr]);
+    if (!currentUser) return undefined;
+    return attendanceRecords.find(r => r.staffId === currentUser.id && r.date === todayStr);
+  }, [attendanceRecords, currentUser, todayStr]);
 
-  const handleMarkPresent = async () => {
+  // Handle Self Attendance Mark (Present = Blue, Absent = Red)
+  const handleSelfMark = async (status: 'present' | 'absent') => {
     if (!currentUser) {
       setShowStaffLoginModal(true);
       return;
     }
     setSubmitting(true);
     setFeedbackMsg(null);
-    const res = await markAttendance('present', shiftNotes || 'Standard duty shift', shiftHours);
+    const defaultNote =
+      status === 'present' ? 'Active duty shift completed' : 'Unable to attend shift today';
+    const res = await markAttendance(status, shiftNotes.trim() || defaultNote, status === 'present' ? shiftHours : 0);
     setSubmitting(false);
     if (res.success) {
-      setFeedbackMsg({ type: 'success', text: 'Attendance recorded: Marked PRESENT with exact IST timestamp!' });
+      setFeedbackMsg({
+        type: 'success',
+        text: `Attendance recorded: Marked ${status.toUpperCase()} on ${todayStr} (IST)!`,
+      });
       setShiftNotes('');
+      setSelectedStaffId(currentUser.id);
     } else {
       setFeedbackMsg({ type: 'error', text: res.message });
     }
   };
 
-  // Month calculations for Monthly Attendance Section
-  const monthData = useMemo(() => {
-    const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
-    const monthName = new Date(selectedYear, selectedMonth, 1).toLocaleDateString(undefined, {
-      month: 'long',
-      year: 'numeric',
-    });
-
-    const isCurrentMonth =
-      todayIST.year === selectedYear && todayIST.month === selectedMonth;
-    const currentDay = isCurrentMonth ? todayIST.day : daysInMonth;
-
-    const days = [];
-    const presentDates: { date: string; time: string; hours?: number; notes?: string }[] = [];
-    const absentDates: string[] = [];
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dayStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const record = myRecords.find(r => r.date === dayStr);
-
-      const isFuture = isCurrentMonth ? day > currentDay : false;
-      const isToday = isCurrentMonth && day === currentDay;
-
-      let status: 'present' | 'absent' | 'unmarked_today' | 'future' = 'future';
-
-      if (record && record.status === 'present') {
-        status = 'present';
-        presentDates.push({
-          date: dayStr,
-          time: record.timeFormatted || formatISTTime(record.timestamp),
-          hours: record.shiftDurationHours || 2,
-          notes: record.shiftNotes || 'Staff duty - Present',
-        });
-      } else if (record && record.status === 'absent') {
-        status = 'absent';
-        absentDates.push(dayStr);
-      } else if (isToday) {
-        // Today remains open/blank until the day ends or staff marks attendance
-        status = 'unmarked_today';
-      } else if (!isFuture) {
-        // Past day that was not marked -> automatically marked Absent after day ends
-        status = 'absent';
-        absentDates.push(dayStr);
-      } else {
-        status = 'future';
-      }
-
-      days.push({
-        day,
-        dateStr: dayStr,
-        status,
-        record,
-      });
+  // Handle Admin Marking any date on selected staff's calendar
+  const handleAdminMarkDate = async (dateStr: string, status: 'present' | 'absent' | 'unmarked') => {
+    if (!selectedStaff || !isAdmin) return;
+    setAdminMarking(true);
+    const res = await adminMarkAttendance(
+      selectedStaff.id,
+      dateStr,
+      status,
+      adminNotesInput.trim() || undefined,
+      status === 'present' ? adminHoursInput : 0
+    );
+    setAdminMarking(false);
+    if (res.success) {
+      setFeedbackMsg({ type: 'success', text: res.message });
+      setAdminSelectedDate(null);
+      setAdminNotesInput('');
+    } else {
+      setFeedbackMsg({ type: 'error', text: res.message });
     }
+  };
 
-    const presentCount = presentDates.length;
-    const absentCount = absentDates.length;
-    const totalCounted = presentCount + absentCount;
-    const attendancePercentage = totalCounted > 0 ? Math.round((presentCount / totalCounted) * 100) : 0;
-
-    return {
-      monthName,
-      daysInMonth,
-      days,
-      presentDates,
-      absentDates,
-      presentCount,
-      absentCount,
-      attendancePercentage,
-    };
-  }, [selectedYear, selectedMonth, myRecords, todayIST]);
-
+  // Month Navigation
   const prevMonth = () => {
     if (selectedMonth === 0) {
       setSelectedMonth(11);
@@ -157,6 +140,7 @@ export const AttendanceView: React.FC = () => {
     } else {
       setSelectedMonth(m => m - 1);
     }
+    setAdminSelectedDate(null);
   };
 
   const nextMonth = () => {
@@ -166,100 +150,218 @@ export const AttendanceView: React.FC = () => {
     } else {
       setSelectedMonth(m => m + 1);
     }
+    setAdminSelectedDate(null);
   };
 
-  // Filtered records for Admin View
-  const filteredRecords = attendanceRecords.filter(record => {
-    const matchesSearch =
-      record.staffName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      record.minecraftIgn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      record.staffRole.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || record.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
+  const monthName = useMemo(() => {
+    return new Date(selectedYear, selectedMonth, 1).toLocaleDateString(undefined, {
+      month: 'long',
+      year: 'numeric',
+    });
+  }, [selectedYear, selectedMonth]);
 
-  const totalPresentCount = attendanceRecords.filter(r => r.status === 'present').length;
-  const totalAbsentCount = attendanceRecords.filter(r => r.status === 'absent').length;
+  // Calculate monthly stats for EVERY staff member (for the Profile Cards Grid)
+  const staffProfilesSummary = useMemo(() => {
+    const monthPrefix = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-`;
+
+    return staffList
+      .filter(s => {
+        if (!profileSearch.trim()) return true;
+        const q = profileSearch.toLowerCase();
+        return (
+          s.name.toLowerCase().includes(q) ||
+          s.minecraftIgn.toLowerCase().includes(q) ||
+          s.role.toLowerCase().includes(q) ||
+          (s.department || '').toLowerCase().includes(q)
+        );
+      })
+      .map(staff => {
+        const allStaffRecords = attendanceRecords.filter(r => r.staffId === staff.id);
+        const monthRecords = allStaffRecords.filter(r => r.date.startsWith(monthPrefix));
+
+        const presentCount = monthRecords.filter(r => r.status === 'present').length;
+        const absentCount = monthRecords.filter(r => r.status === 'absent').length;
+        const totalMarked = presentCount + absentCount;
+        const percentage = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : 0;
+
+        const todayRecord = allStaffRecords.find(r => r.date === todayStr);
+
+        return {
+          staff,
+          presentCount,
+          absentCount,
+          totalMarked,
+          percentage,
+          todayRecord,
+          totalLogsCount: allStaffRecords.length,
+        };
+      });
+  }, [staffList, attendanceRecords, selectedYear, selectedMonth, profileSearch, todayStr]);
+
+  // Calculate detailed Calendar & Individual Logs for the SELECTED (tapped) staff member
+  const selectedStaffDetail = useMemo(() => {
+    if (!selectedStaff) return null;
+
+    const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+    const firstDayOfWeek = new Date(selectedYear, selectedMonth, 1).getDay(); // 0 (Sun) to 6 (Sat)
+    const monthPrefix = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-`;
+
+    const allMemberRecords = attendanceRecords
+      .filter(r => r.staffId === selectedStaff.id)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.timestamp - a.timestamp);
+
+    const monthMemberRecords = allMemberRecords.filter(r => r.date.startsWith(monthPrefix));
+
+    const days: {
+      day: number;
+      dateStr: string;
+      status: 'present' | 'absent' | 'unmarked';
+      isToday: boolean;
+      record?: AttendanceRecord;
+    }[] = [];
+
+    const presentDates: AttendanceRecord[] = [];
+    const absentDates: AttendanceRecord[] = [];
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const record = monthMemberRecords.find(r => r.date === dayStr);
+      const isToday = dayStr === todayStr;
+
+      let status: 'present' | 'absent' | 'unmarked' = 'unmarked';
+      if (record?.status === 'present') {
+        status = 'present';
+        presentDates.push(record);
+      } else if (record?.status === 'absent') {
+        status = 'absent';
+        absentDates.push(record);
+      }
+
+      days.push({
+        day,
+        dateStr: dayStr,
+        status,
+        isToday,
+        record,
+      });
+    }
+
+    const presentCount = presentDates.length;
+    const absentCount = absentDates.length;
+    const totalMarked = presentCount + absentCount;
+    const attendancePercentage = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : 0;
+
+    return {
+      daysInMonth,
+      firstDayOfWeek,
+      days,
+      presentDates,
+      absentDates,
+      presentCount,
+      absentCount,
+      totalMarked,
+      attendancePercentage,
+      monthMemberRecords,
+      allMemberRecords,
+    };
+  }, [selectedStaff, selectedYear, selectedMonth, attendanceRecords, todayStr]);
+
+  const handleSelectProfile = (staffId: string) => {
+    setSelectedStaffId(staffId);
+    setAdminSelectedDate(null);
+    setTimeout(() => {
+      detailSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 80);
+  };
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header */}
+      {/* TOP HEADER BANNER */}
       <div className="relative rounded-2xl bg-gradient-to-r from-[#120a2a] via-[#180f38] to-[#120a2a] border border-purple-500/30 p-5 sm:p-6 shadow-xl overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="p-3 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-purple-600/30 border border-emerald-500/40 text-emerald-300 shadow-lg">
+            <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-600/30 border border-blue-500/40 text-blue-300 shadow-lg">
               <Calendar className="w-7 h-7" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wider font-display">
-                  Staff Attendance System
+                  Staff Attendance & Profile Logs
                 </h1>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-bold text-emerald-300 uppercase tracking-wide">
-                  Auto-Timestamp
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-500/40 text-[10px] font-bold text-blue-300 uppercase tracking-wide">
+                  Blue = Present • Red = Absent
                 </span>
               </div>
               <p className="text-xs text-purple-300/80 mt-0.5">
-                Mark your daily presence and track complete monthly attendance records.
+                Tap on any staff member&apos;s profile below to view their monthly attendance calendar, percentage, and individual log.
               </p>
             </div>
           </div>
 
-          {/* Quick Stats: ONLY show global Total Attendance to Admin (Requirement 2) */}
-          {isAdmin ? (
-            <div className="flex items-center gap-2 font-mono text-xs">
-              <div className="px-3 py-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span>Total Present: <strong>{totalPresentCount}</strong></span>
-              </div>
-              <div className="px-3 py-2 rounded-xl bg-red-950/60 border border-red-500/30 text-red-300 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-400" />
-                <span>Total Absent: <strong>{totalAbsentCount}</strong></span>
-              </div>
-            </div>
-          ) : currentUser ? (
-            <div className="px-3 py-2 rounded-xl bg-purple-950/60 border border-purple-500/30 text-purple-200 text-xs font-mono">
-              <span>My Month Rate: </span>
-              <strong className="text-emerald-400">{monthData.attendancePercentage}%</strong>
-            </div>
-          ) : null}
+          {/* Month Selector in Header */}
+          <div className="flex items-center gap-2 bg-[#0e0720] p-1.5 rounded-xl border border-purple-500/30 self-start sm:self-auto">
+            <button
+              onClick={prevMonth}
+              className="p-1.5 rounded-lg text-purple-300 hover:text-white hover:bg-purple-900/50 transition-colors cursor-pointer"
+              title="Previous Month"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-bold text-white px-3 min-w-[130px] text-center font-display uppercase tracking-wider">
+              {monthName}
+            </span>
+            <button
+              onClick={nextMonth}
+              className="p-1.5 rounded-lg text-purple-300 hover:text-white hover:bg-purple-900/50 transition-colors cursor-pointer"
+              title="Next Month"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* SECTION 1: DAILY ATTENDANCE MARKING CARD (Present-Only) */}
+      {/* SECTION 1: TODAY'S ATTENDANCE CHECK-IN (Manual Only — No Auto-Marking) */}
       <div className="rounded-2xl bg-[#0f0a24] border border-purple-500/35 p-5 sm:p-6 shadow-xl relative overflow-hidden">
-        <div className="flex items-center justify-between border-b border-purple-900/40 pb-4 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-purple-900/40 pb-4 mb-4 gap-2">
           <div className="flex items-center gap-2">
-            <UserCheck className="w-5 h-5 text-emerald-400" />
+            <UserCheck className="w-5 h-5 text-blue-400" />
             <h2 className="text-sm font-bold text-white uppercase tracking-wider font-display">
-              Today's Attendance Check-In
+              Mark Today&apos;s Attendance ({todayStr} IST)
             </h2>
           </div>
           <span className="text-xs text-purple-300 font-mono">
-            {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })}
+            Manual Check-In Only • Zero Auto-Marking
           </span>
         </div>
 
         {feedbackMsg && (
           <div
-            className={`mb-4 p-3 rounded-xl border text-xs flex items-center gap-2 animate-fadeIn ${
+            className={`mb-4 p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${
               feedbackMsg.type === 'success'
-                ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200'
+                ? 'bg-blue-950/80 border-blue-500/50 text-blue-200'
                 : 'bg-red-950/80 border-red-500/50 text-red-200'
             }`}
           >
-            {feedbackMsg.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-            )}
-            <span>{feedbackMsg.text}</span>
+            <div className="flex items-center gap-2">
+              {feedbackMsg.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+              )}
+              <span>{feedbackMsg.text}</span>
+            </div>
+            <button
+              onClick={() => setFeedbackMsg(null)}
+              className="text-xs opacity-70 hover:opacity-100 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
         {currentUser ? (
           <div className="space-y-4">
-            {/* Staff Info Preview */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-[#170f38]/70 border border-purple-500/30 gap-3">
               <div className="flex items-center gap-3">
                 <img
@@ -268,7 +370,7 @@ export const AttendanceView: React.FC = () => {
                   className="w-12 h-12 rounded-xl bg-purple-950 border border-purple-400/50 object-cover shadow-md"
                 />
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-base font-bold text-white">{currentUser.name}</span>
                     <span className="px-2 py-0.5 rounded bg-purple-900/60 border border-purple-500/30 text-[10px] font-bold text-purple-200 uppercase tracking-wide">
                       {currentUser.role}
@@ -277,23 +379,30 @@ export const AttendanceView: React.FC = () => {
                   <div className="flex items-center gap-2 text-xs text-purple-300/80 font-mono mt-0.5">
                     <span>IGN: <strong className="text-purple-200">{currentUser.minecraftIgn}</strong></span>
                     <span>•</span>
-                    <span>Department: {currentUser.department || 'Staff Team'}</span>
+                    <span>Dept: {currentUser.department || 'Staff Team'}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Today's status */}
+              {/* Today's Status Indicator */}
               <div className="text-left sm:text-right">
                 <span className="text-[10px] uppercase font-bold text-purple-400 tracking-wider block mb-1">
-                  Today's Recorded Status:
+                  My Status Today ({todayStr}):
                 </span>
                 {myRecordToday ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                    PRESENT ({myRecordToday.timeFormatted})
-                  </span>
+                  myRecordToday.status === 'present' ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-blue-600/25 border border-blue-400/50 text-blue-300">
+                      <span className="w-2 h-2 rounded-full bg-blue-400" />
+                      PRESENT ({myRecordToday.timeFormatted})
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-red-600/25 border border-red-500/50 text-red-300">
+                      <span className="w-2 h-2 rounded-full bg-red-400" />
+                      ABSENT ({myRecordToday.timeFormatted})
+                    </span>
+                  )
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-bold uppercase tracking-wider">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300 text-xs font-bold uppercase tracking-wider">
                     <Clock className="w-3.5 h-3.5" />
                     Not Marked Yet Today
                   </span>
@@ -301,7 +410,6 @@ export const AttendanceView: React.FC = () => {
               </div>
             </div>
 
-            {/* Attendance Action Form (Present Only) */}
             <div className="p-4 rounded-xl bg-[#130b2e]/60 border border-purple-900/40 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
@@ -315,47 +423,51 @@ export const AttendanceView: React.FC = () => {
                     step="0.5"
                     value={shiftHours}
                     onChange={e => setShiftHours(parseFloat(e.target.value) || 1)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#1b1240] border border-purple-500/30 text-white text-xs focus:outline-none focus:border-emerald-400"
+                    className="w-full px-3 py-2 rounded-xl bg-[#1b1240] border border-purple-500/30 text-white text-xs focus:outline-none focus:border-blue-400"
                   />
                 </div>
 
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-semibold text-purple-300 mb-1">
-                    Duty Summary / Shift Notes (Optional)
+                    Duty Summary / Reason (Optional)
                   </label>
                   <input
                     type="text"
                     value={shiftNotes}
                     onChange={e => setShiftNotes(e.target.value)}
-                    placeholder="e.g. Handled player tickets, spawn patrol, answered queries"
-                    className="w-full px-3 py-2 rounded-xl bg-[#1b1240] border border-purple-500/30 text-white text-xs focus:outline-none focus:border-emerald-400"
+                    placeholder="e.g. Handled player tickets, spawn patrol, or reason for absence"
+                    className="w-full px-3 py-2 rounded-xl bg-[#1b1240] border border-purple-500/30 text-white text-xs focus:outline-none focus:border-blue-400"
                   />
                 </div>
               </div>
 
-              {/* Present Button ONLY (Requirement 1: Remove Absent button completely) */}
-              <div className="pt-2">
+              <div className="flex flex-wrap items-center gap-3 pt-1">
                 <button
                   type="button"
                   disabled={submitting}
-                  onClick={handleMarkPresent}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  onClick={() => handleSelfMark('present')}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>
-                    {myRecordToday ? 'Update: Mark Present (Record Current Time)' : 'Mark Present (Record Exact Time)'}
-                  </span>
+                  <span>Mark Present (Blue)</span>
                 </button>
-                <p className="text-[11px] text-purple-400/80 mt-1.5 italic">
-                  * Marking yourself Present records your exact date & timestamp. Staff who do not mark attendance are automatically marked absent by the system.
-                </p>
+
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => handleSelfMark('absent')}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs shadow-lg shadow-red-600/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>Mark Absent (Red)</span>
+                </button>
               </div>
             </div>
           </div>
         ) : (
-          <div className="text-center py-6 space-y-3">
+          <div className="text-center py-5 space-y-3">
             <p className="text-xs text-purple-300/80">
-              Please sign in with your staff account to check in and record your attendance.
+              Sign in with your staff account to mark your daily attendance. You can still tap any staff profile below to view their attendance calendar and individual log.
             </p>
             <button
               onClick={() => setShowStaffLoginModal(true)}
@@ -367,339 +479,618 @@ export const AttendanceView: React.FC = () => {
         )}
       </div>
 
-      {/* SECTION 2: MONTHLY ATTENDANCE SECTION (Requirement 1) */}
-      {currentUser && (
-        <div className="rounded-2xl bg-[#0f0a24] border border-purple-500/35 p-5 sm:p-6 shadow-xl space-y-5">
-          {/* Section Header with Month Navigation */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-purple-900/40 pb-4">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="w-5 h-5 text-purple-400" />
+      {/* SECTION 2: ALL STAFF PROFILES GRID (Tap on any profile to view their attendance) */}
+      <div className="rounded-2xl bg-[#0f0a24] border border-purple-500/35 p-5 sm:p-6 shadow-xl space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-purple-900/40 pb-4">
+          <div className="flex items-center gap-2.5">
+            <Users className="w-5 h-5 text-purple-400" />
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider font-display">
+                Staff Profiles — Tap Any Profile to View Attendance ({staffProfilesSummary.length})
+              </h2>
+              <p className="text-xs text-purple-300/70">
+                Select a staff member to inspect their {monthName} calendar (Blue = Present, Red = Absent), monthly percentage, and individual log
+              </p>
+            </div>
+          </div>
+
+          {/* Search Staff Profile */}
+          <div className="relative w-full sm:w-64">
+            <Search className="w-4 h-4 text-purple-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={profileSearch}
+              onChange={e => setProfileSearch(e.target.value)}
+              placeholder="Search staff profile..."
+              className="w-full pl-9 pr-3 py-2 rounded-xl bg-[#170f38] border border-purple-500/30 text-xs text-white placeholder-purple-400/50 focus:outline-none focus:border-blue-400"
+            />
+          </div>
+        </div>
+
+        {/* Staff Profile Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {staffProfilesSummary.map(item => {
+            const isSelected = selectedStaff?.id === item.staff.id;
+            return (
+              <div
+                key={item.staff.id}
+                onClick={() => handleSelectProfile(item.staff.id)}
+                className={`group relative rounded-2xl p-4 border transition-all cursor-pointer select-none ${
+                  isSelected
+                    ? 'bg-gradient-to-br from-[#1d1245] via-[#17113a] to-[#120b2e] border-blue-400 shadow-lg shadow-blue-950/50 ring-2 ring-blue-500/40'
+                    : 'bg-[#140c30]/80 hover:bg-[#19103c] border-purple-500/25 hover:border-purple-400/50'
+                }`}
+              >
+                {/* Top Row: Avatar, Name, Role & Monthly Percentage Badge */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative shrink-0">
+                      <img
+                        src={
+                          item.staff.avatarUrl ||
+                          `https://minotar.net/helm/${encodeURIComponent(item.staff.minecraftIgn)}/100.png`
+                        }
+                        alt={item.staff.name}
+                        className="w-12 h-12 rounded-xl bg-purple-950 border border-purple-400/40 object-cover shadow-md"
+                        referrerPolicy="no-referrer"
+                      />
+                      {/* Today status dot */}
+                      <span
+                        className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-[#140c30] ${
+                          item.todayRecord?.status === 'present'
+                            ? 'bg-blue-400'
+                            : item.todayRecord?.status === 'absent'
+                            ? 'bg-red-500'
+                            : 'bg-slate-500'
+                        }`}
+                        title={
+                          item.todayRecord
+                            ? `Today: ${item.todayRecord.status.toUpperCase()}`
+                            : 'Not Marked Today'
+                        }
+                      />
+                    </div>
+
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-white truncate group-hover:text-blue-200 transition-colors">
+                        {item.staff.name}
+                      </h3>
+                      <span className="inline-block px-2 py-0.5 rounded bg-purple-900/70 border border-purple-500/30 text-[10px] font-bold text-purple-200 uppercase font-mono mt-0.5">
+                        {item.staff.role}
+                      </span>
+                      <div className="text-[11px] text-purple-300/70 font-mono truncate mt-0.5">
+                        IGN: {item.staff.minecraftIgn}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Monthly Percentage Pill */}
+                  <div className="text-right shrink-0">
+                    <div
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-black font-mono border ${
+                        item.totalMarked === 0
+                          ? 'bg-purple-950/60 border-purple-500/30 text-purple-300'
+                          : item.percentage >= 75
+                          ? 'bg-blue-600/25 border-blue-400/50 text-blue-300'
+                          : item.percentage >= 50
+                          ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                          : 'bg-red-600/25 border-red-500/50 text-red-300'
+                      }`}
+                    >
+                      <span>{item.percentage}%</span>
+                    </div>
+                    <span className="block text-[9px] text-purple-400 font-mono mt-0.5 uppercase">
+                      Monthly Rate
+                    </span>
+                  </div>
+                </div>
+
+                {/* Progress Bar (Blue vs Red) */}
+                <div className="mt-3.5 space-y-1.5">
+                  <div className="w-full h-2 rounded-full bg-[#0b061a] border border-purple-900/50 overflow-hidden flex">
+                    {item.totalMarked > 0 ? (
+                      <>
+                        <div
+                          className="bg-blue-500 h-full transition-all duration-300"
+                          style={{ width: `${item.percentage}%` }}
+                        />
+                        <div
+                          className="bg-red-500 h-full transition-all duration-300"
+                          style={{ width: `${100 - item.percentage}%` }}
+                        />
+                      </>
+                    ) : (
+                      <div className="bg-purple-900/30 h-full w-full" />
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] font-mono pt-0.5">
+                    <span className="text-blue-400 font-bold flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-blue-500" />
+                      {item.presentCount} Present
+                    </span>
+                    <span className="text-red-400 font-bold flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-red-500" />
+                      {item.absentCount} Absent
+                    </span>
+                    <span
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                        isSelected
+                          ? 'bg-blue-500/20 text-blue-300 border border-blue-400/40'
+                          : 'text-purple-400 group-hover:text-purple-200'
+                      }`}
+                    >
+                      {isSelected ? '✓ Viewing' : 'Tap to View →'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* SECTION 3: TAPPED STAFF MEMBER'S CALENDAR, MONTHLY PERCENTAGE & INDIVIDUAL LOG */}
+      {selectedStaff && selectedStaffDetail && (
+        <div
+          ref={detailSectionRef}
+          className="rounded-3xl bg-[#0e0824] border-2 border-blue-500/40 p-5 sm:p-7 shadow-2xl space-y-6"
+        >
+          {/* Selected Staff Profile Banner */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-[#170e38] via-[#1d1245] to-[#170e38] p-5 rounded-2xl border border-purple-500/30">
+            <div className="flex items-center gap-4">
+              <img
+                src={
+                  selectedStaff.avatarUrl ||
+                  `https://minotar.net/helm/${encodeURIComponent(selectedStaff.minecraftIgn)}/100.png`
+                }
+                alt={selectedStaff.name}
+                className="w-16 h-16 rounded-2xl bg-purple-950 border-2 border-blue-400/60 object-cover shadow-lg"
+                referrerPolicy="no-referrer"
+              />
               <div>
-                <h2 className="text-sm font-bold text-white uppercase tracking-wider font-display">
-                  Monthly Attendance Record
-                </h2>
-                <p className="text-xs text-purple-300/70">
-                  Comprehensive breakdown of present dates and specific absent dates
-                </p>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wider font-display">
+                    {selectedStaff.name}&apos;s Attendance
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-lg bg-purple-900/80 border border-purple-400/40 text-xs font-bold text-purple-200 uppercase font-mono">
+                    {selectedStaff.role}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-purple-300/80 font-mono mt-1 flex-wrap">
+                  <span>IGN: <strong className="text-white">{selectedStaff.minecraftIgn}</strong></span>
+                  <span>•</span>
+                  <span>Department: <strong>{selectedStaff.department || 'Staff Team'}</strong></span>
+                  <span>•</span>
+                  <span>Individual Logs: <strong>{selectedStaffDetail.allMemberRecords.length}</strong></span>
+                </div>
               </div>
             </div>
 
-            {/* Month Switcher Controls */}
-            <div className="flex items-center gap-2 bg-[#170e33] p-1.5 rounded-xl border border-purple-500/30">
+            {/* Month Switcher inside Selected Profile */}
+            <div className="flex items-center gap-2 bg-[#0c061e] p-1.5 rounded-xl border border-purple-500/30 self-start md:self-auto">
               <button
                 onClick={prevMonth}
-                className="p-1 rounded-lg text-purple-300 hover:text-white hover:bg-purple-900/50 transition-colors"
-                title="Previous Month"
+                className="p-1.5 rounded-lg text-purple-300 hover:text-white hover:bg-purple-900/50 transition-colors cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-xs font-bold text-purple-100 px-2 min-w-[120px] text-center font-display uppercase">
-                {monthData.monthName}
+              <span className="text-xs font-bold text-white px-3 min-w-[130px] text-center font-display uppercase">
+                {monthName}
               </span>
               <button
                 onClick={nextMonth}
-                className="p-1 rounded-lg text-purple-300 hover:text-white hover:bg-purple-900/50 transition-colors"
-                title="Next Month"
+                className="p-1.5 rounded-lg text-purple-300 hover:text-white hover:bg-purple-900/50 transition-colors cursor-pointer"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Month Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-500/25">
-              <span className="text-[11px] text-purple-300 block mb-1">Month Period</span>
-              <span className="text-sm font-bold text-white">{monthData.daysInMonth} Days</span>
+          {/* MONTHLY PERCENTAGE & STATS CARDS */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {/* Monthly Attendance Percentage */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-950/50 to-indigo-950/40 border border-blue-400/40 shadow-md">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold text-blue-200 uppercase tracking-wide">
+                  Monthly Percentage
+                </span>
+                <Percent className="w-4 h-4 text-blue-400" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-white font-mono">
+                {selectedStaffDetail.attendancePercentage}%
+              </div>
+              <div className="w-full h-2 rounded-full bg-[#090516] border border-blue-900/50 overflow-hidden flex mt-2">
+                {selectedStaffDetail.totalMarked > 0 && (
+                  <>
+                    <div
+                      className="bg-blue-500 h-full"
+                      style={{ width: `${selectedStaffDetail.attendancePercentage}%` }}
+                    />
+                    <div
+                      className="bg-red-500 h-full"
+                      style={{ width: `${100 - selectedStaffDetail.attendancePercentage}%` }}
+                    />
+                  </>
+                )}
+              </div>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30">
-              <span className="text-[11px] text-emerald-300 block mb-1">Days Present</span>
-              <span className="text-sm font-bold text-emerald-400 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" />
-                {monthData.presentCount} Days
+            {/* Present Days (BLUE) */}
+            <div className="p-4 rounded-2xl bg-blue-950/35 border border-blue-500/40">
+              <span className="text-xs font-bold text-blue-300 uppercase tracking-wide block mb-1">
+                Present Days (Blue)
+              </span>
+              <div className="text-2xl font-black text-blue-400 font-mono flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-blue-500 shadow-sm shadow-blue-400" />
+                <span>{selectedStaffDetail.presentCount} Days</span>
+              </div>
+              <span className="text-[11px] text-blue-300/70 font-mono block mt-1">
+                Marked Present in {monthName}
               </span>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-red-950/30 border border-red-500/30">
-              <span className="text-[11px] text-red-300 block mb-1">Days Absent</span>
-              <span className="text-sm font-bold text-red-400 flex items-center gap-1.5">
-                <XCircle className="w-4 h-4" />
-                {monthData.absentCount} Days
+            {/* Absent Days (RED) */}
+            <div className="p-4 rounded-2xl bg-red-950/35 border border-red-500/40">
+              <span className="text-xs font-bold text-red-300 uppercase tracking-wide block mb-1">
+                Absent Days (Red)
+              </span>
+              <div className="text-2xl font-black text-red-400 font-mono flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-red-500 shadow-sm shadow-red-400" />
+                <span>{selectedStaffDetail.absentCount} Days</span>
+              </div>
+              <span className="text-[11px] text-red-300/70 font-mono block mt-1">
+                Marked Absent in {monthName}
               </span>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30">
-              <span className="text-[11px] text-indigo-300 block mb-1">Attendance Rate</span>
-              <span className="text-sm font-bold text-indigo-300">
-                {monthData.attendancePercentage}%
+            {/* Total Marked / Days in Month */}
+            <div className="p-4 rounded-2xl bg-purple-950/30 border border-purple-500/30">
+              <span className="text-xs font-bold text-purple-300 uppercase tracking-wide block mb-1">
+                Total Marked Days
+              </span>
+              <div className="text-2xl font-black text-white font-mono">
+                {selectedStaffDetail.totalMarked} / {selectedStaffDetail.daysInMonth}
+              </div>
+              <span className="text-[11px] text-purple-300/70 font-mono block mt-1">
+                {monthName} Calendar
               </span>
             </div>
           </div>
 
-          {/* Calendar Visual Grid */}
-          <div>
-            <span className="text-xs font-semibold text-purple-300 block mb-2 uppercase tracking-wider">
-              {monthData.monthName} — Daily Attendance Grid
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-              {monthData.days.map(d => (
-                <div
-                  key={d.day}
-                  className={`p-2.5 rounded-xl border text-center transition-all ${
-                    d.status === 'present'
-                      ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200 shadow-sm shadow-emerald-950/50'
-                      : d.status === 'absent'
-                      ? 'bg-red-950/50 border-red-500/40 text-red-200'
-                      : d.status === 'unmarked_today'
-                      ? 'bg-amber-950/60 border-amber-500/50 text-amber-200 animate-pulse'
-                      : 'bg-purple-950/20 border-purple-900/30 text-purple-400/50'
-                  }`}
-                >
-                  <div className="text-xs font-bold font-mono">Day {d.day}</div>
-                  <div className="mt-1">
-                    {d.status === 'present' && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider block text-emerald-400">
-                        ✓ Present
-                      </span>
-                    )}
-                    {d.status === 'absent' && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider block text-red-400">
-                        ✗ Absent
-                      </span>
-                    )}
-                    {d.status === 'unmarked_today' && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider block text-amber-400">
-                        Today (Pending)
-                      </span>
-                    )}
-                    {d.status === 'future' && (
-                      <span className="text-[10px] block opacity-50 font-mono">—</span>
-                    )}
+          {/* MONTHLY CALENDAR (BLUE = PRESENT, RED = ABSENT) */}
+          <div className="space-y-3 bg-[#130b2e]/70 p-4 sm:p-6 rounded-2xl border border-purple-500/25">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-purple-900/40">
+              <div>
+                <h3 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider font-display flex items-center gap-2">
+                  <CalendarDays className="w-5 h-5 text-blue-400" />
+                  <span>{selectedStaff.name} — {monthName} Attendance Calendar</span>
+                </h3>
+                <p className="text-xs text-purple-300/70 mt-0.5">
+                  {isAdmin
+                    ? 'Admin Mode: Tap any date on the calendar below to mark Present (Blue), Absent (Red), or Clear.'
+                    : 'Blue dates indicate Present shifts; Red dates indicate Absent days.'}
+                </p>
+              </div>
+
+              {/* Color Legend */}
+              <div className="flex items-center gap-4 text-xs font-mono shrink-0">
+                <span className="flex items-center gap-1.5 text-blue-300 font-bold">
+                  <span className="w-3 h-3 rounded bg-blue-500 border border-blue-300 shadow-sm shadow-blue-500/50" />
+                  Blue = Present
+                </span>
+                <span className="flex items-center gap-1.5 text-red-300 font-bold">
+                  <span className="w-3 h-3 rounded bg-red-600 border border-red-400 shadow-sm shadow-red-600/50" />
+                  Red = Absent
+                </span>
+                <span className="flex items-center gap-1.5 text-purple-400">
+                  <span className="w-3 h-3 rounded bg-purple-950 border border-purple-700" />
+                  Unmarked
+                </span>
+              </div>
+            </div>
+
+            {/* Admin Date Editor Bar (when Admin taps a date cell on the calendar) */}
+            {isAdmin && adminSelectedDate && (
+              <div className="p-4 rounded-2xl bg-[#1b1040] border-2 border-amber-400/50 space-y-3 animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+                      Admin Attendance Control — {selectedStaff.name} on <span className="text-amber-300 font-mono">{adminSelectedDate}</span>
+                    </span>
                   </div>
-                  {d.record && (
-                    <div className="text-[9px] text-purple-300/80 font-mono mt-0.5 truncate">
-                      {d.record.timeFormatted}
-                    </div>
-                  )}
+                  <button
+                    onClick={() => setAdminSelectedDate(null)}
+                    className="p-1 rounded-lg text-purple-300 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-purple-300 mb-1">
+                      Shift Hours (if Present)
+                    </label>
+                    <input
+                      type="number"
+                      min="0.5"
+                      max="12"
+                      step="0.5"
+                      value={adminHoursInput}
+                      onChange={e => setAdminHoursInput(parseFloat(e.target.value) || 2)}
+                      className="w-full px-3 py-1.5 rounded-xl bg-[#11092a] border border-purple-500/30 text-white text-xs"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-semibold text-purple-300 mb-1">
+                      Shift Note / Remarks (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={adminNotesInput}
+                      onChange={e => setAdminNotesInput(e.target.value)}
+                      placeholder="e.g. Verified shift or absent note..."
+                      className="w-full px-3 py-1.5 rounded-xl bg-[#11092a] border border-purple-500/30 text-white text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    disabled={adminMarking}
+                    onClick={() => handleAdminMarkDate(adminSelectedDate, 'present')}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 cursor-pointer disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Set Present (Blue)</span>
+                  </button>
+                  <button
+                    disabled={adminMarking}
+                    onClick={() => handleAdminMarkDate(adminSelectedDate, 'absent')}
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-red-600/30 cursor-pointer disabled:opacity-50"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Set Absent (Red)</span>
+                  </button>
+                  <button
+                    disabled={adminMarking}
+                    onClick={() => handleAdminMarkDate(adminSelectedDate, 'unmarked')}
+                    className="px-4 py-2 rounded-xl bg-purple-900/60 hover:bg-purple-800 border border-purple-500/30 text-purple-200 font-semibold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Clear Date</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Days of Week Header */}
+            <div className="grid grid-cols-7 gap-2 text-center pt-2">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(dayName => (
+                <div
+                  key={dayName}
+                  className="text-[11px] font-bold uppercase tracking-wider text-purple-400 py-1 font-mono"
+                >
+                  {dayName}
                 </div>
               ))}
             </div>
-          </div>
 
-          {/* SPECIFIC ABSENT & PRESENT DATES PANELS */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-            {/* Specific Absent Dates */}
-            <div className="p-4 rounded-xl bg-red-950/20 border border-red-500/30 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-red-300 font-bold text-xs uppercase tracking-wide">
-                  <XCircle className="w-4 h-4 text-red-400" />
-                  <span>Specific Dates Absent ({monthData.absentDates.length})</span>
-                </div>
-                <span className="text-[10px] text-red-400 font-mono">Unmarked Dates</span>
-              </div>
+            {/* Calendar Grid Cells */}
+            <div className="grid grid-cols-7 gap-2">
+              {/* Empty offset cells before the 1st of the month */}
+              {Array.from({ length: selectedStaffDetail.firstDayOfWeek }).map((_, idx) => (
+                <div
+                  key={`empty-${idx}`}
+                  className="p-2 rounded-xl bg-transparent border border-transparent min-h-[68px] sm:min-h-[80px]"
+                />
+              ))}
 
-              {monthData.absentDates.length === 0 ? (
-                <p className="text-xs text-emerald-300/90 italic p-3 bg-emerald-950/30 rounded-lg border border-emerald-500/20">
-                  🎉 Perfect record! No absent dates recorded for {monthData.monthName}.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
-                  {monthData.absentDates.map(dStr => (
-                    <span
-                      key={dStr}
-                      className="px-2.5 py-1 rounded-lg bg-red-950/60 border border-red-500/40 text-red-300 text-xs font-mono font-medium"
-                    >
-                      {dStr}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Specific Present Dates */}
-            <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs uppercase tracking-wide">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Specific Dates Present ({monthData.presentDates.length})</span>
-                </div>
-                <span className="text-[10px] text-emerald-400 font-mono">Logged Presences</span>
-              </div>
-
-              {monthData.presentDates.length === 0 ? (
-                <p className="text-xs text-purple-300/80 italic p-3 bg-purple-950/30 rounded-lg">
-                  No present records yet for {monthData.monthName}.
-                </p>
-              ) : (
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                  {monthData.presentDates.map(p => (
-                    <div
-                      key={p.date}
-                      className="p-2 rounded-lg bg-emerald-950/50 border border-emerald-500/30 flex items-center justify-between text-xs font-mono"
-                    >
-                      <span className="font-bold text-emerald-200">{p.date}</span>
-                      <span className="text-emerald-400 text-[11px]">{p.time}</span>
-                      {p.hours && (
-                        <span className="text-[10px] text-purple-300">({p.hours} hrs)</span>
+              {/* Actual Month Days */}
+              {selectedStaffDetail.days.map(d => {
+                const isSelectedDate = adminSelectedDate === d.dateStr;
+                return (
+                  <div
+                    key={d.day}
+                    onClick={() => {
+                      if (isAdmin) {
+                        setAdminSelectedDate(d.dateStr);
+                        setAdminNotesInput(d.record?.shiftNotes || '');
+                        setAdminHoursInput(d.record?.shiftDurationHours || 2);
+                      }
+                    }}
+                    className={`relative p-2 sm:p-2.5 rounded-xl border text-center transition-all min-h-[68px] sm:min-h-[82px] flex flex-col justify-between ${
+                      isAdmin ? 'cursor-pointer hover:scale-[1.02]' : ''
+                    } ${
+                      isSelectedDate ? 'ring-2 ring-amber-400' : ''
+                    } ${
+                      d.status === 'present'
+                        ? 'bg-blue-600/35 border-blue-400 text-blue-100 shadow-md shadow-blue-950/60'
+                        : d.status === 'absent'
+                        ? 'bg-red-600/35 border-red-500 text-red-100 shadow-md shadow-red-950/60'
+                        : d.isToday
+                        ? 'bg-purple-900/40 border-purple-400/60 text-white'
+                        : 'bg-[#0c071e]/80 border-purple-900/35 text-purple-400/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs sm:text-sm font-black font-mono">{d.day}</span>
+                      {d.isToday && (
+                        <span className="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-400/40 text-[8px] font-bold text-amber-300 uppercase">
+                          Today
+                        </span>
                       )}
                     </div>
-                  ))}
+
+                    <div className="my-1">
+                      {d.status === 'present' && (
+                        <span className="inline-block px-1.5 py-0.5 rounded bg-blue-500/40 border border-blue-300/40 text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider text-white">
+                          ✓ Present
+                        </span>
+                      )}
+                      {d.status === 'absent' && (
+                        <span className="inline-block px-1.5 py-0.5 rounded bg-red-600/40 border border-red-300/40 text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider text-white">
+                          ✗ Absent
+                        </span>
+                      )}
+                      {d.status === 'unmarked' && (
+                        <span className="text-[10px] opacity-40 font-mono block">—</span>
+                      )}
+                    </div>
+
+                    {d.record ? (
+                      <div className="text-[8px] sm:text-[9px] font-mono opacity-85 truncate">
+                        {d.record.timeFormatted}
+                      </div>
+                    ) : (
+                      <div className="h-2" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* SECTION 4: INDIVIDUAL ATTENDANCE LOG FOR SELECTED STAFF MEMBER ("individual log ek ek ka") */}
+          <div className="space-y-4 bg-[#120b2c]/80 p-4 sm:p-6 rounded-2xl border border-purple-500/30">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-purple-900/40 pb-3">
+              <div className="flex items-center gap-2.5">
+                <FileText className="w-5 h-5 text-blue-400" />
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider font-display">
+                    {selectedStaff.name}&apos;s Individual Attendance Log
+                  </h3>
+                  <p className="text-xs text-purple-300/70">
+                    Personal attendance history exclusively for {selectedStaff.name} ({selectedStaff.minecraftIgn})
+                  </p>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SECTION 3: ALL-STAFF ATTENDANCE LOGS (Authorized Admin Only) */}
-      {isAdmin && (
-        <div className="space-y-4 rounded-2xl bg-[#0f0a24] border border-amber-500/30 p-5 sm:p-6 shadow-xl">
-          <div className="flex items-center gap-2 border-b border-purple-900/40 pb-3">
-            <Shield className="w-5 h-5 text-amber-400" />
-            <div>
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider font-display">
-                All-Staff Attendance Log (Admin Oversight)
-              </h2>
-              <p className="text-xs text-purple-300/70">
-                Administrative control over team attendance logs, deletion, and records
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#110c26] p-4 rounded-xl border border-purple-900/40">
-            <div className="flex items-center gap-2 flex-1 max-w-md">
-              <div className="relative w-full">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Search attendance by staff name, IGN, or role..."
-                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#181138] border border-purple-500/30 text-xs text-white placeholder-purple-400/40 focus:outline-none focus:border-amber-400"
-                />
-                <Search className="w-4 h-4 text-purple-400 absolute left-3 top-2.5" />
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 bg-[#181138] p-1 rounded-xl border border-purple-500/30">
-                {(['all', 'present', 'absent'] as const).map(tab => (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 bg-[#18103a] p-1 rounded-xl border border-purple-500/30">
                   <button
-                    key={tab}
-                    onClick={() => setFilterStatus(tab)}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
-                      filterStatus === tab
-                        ? 'bg-purple-600 text-white'
+                    onClick={() => setLogScope('month')}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      logScope === 'month'
+                        ? 'bg-blue-600 text-white'
                         : 'text-purple-300/70 hover:text-white'
                     }`}
                   >
-                    {tab}
+                    {monthName} ({selectedStaffDetail.monthMemberRecords.length})
                   </button>
-                ))}
-              </div>
+                  <button
+                    onClick={() => setLogScope('all')}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      logScope === 'all'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-purple-300/70 hover:text-white'
+                    }`}
+                  >
+                    All Time ({selectedStaffDetail.allMemberRecords.length})
+                  </button>
+                </div>
 
-              {attendanceRecords.length > 0 && (
-                <button
-                  onClick={() => setConfirmClearModal(true)}
-                  className="px-3 py-2 rounded-xl bg-red-950/60 hover:bg-red-900/70 border border-red-500/40 text-red-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Clear all attendance records"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Clear All</span>
-                </button>
-              )}
+                {isAdmin && attendanceRecords.length > 0 && (
+                  <button
+                    onClick={() => setConfirmClearModal(true)}
+                    className="px-3 py-1.5 rounded-xl bg-red-950/60 hover:bg-red-900/70 border border-red-500/40 text-red-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Clear all attendance records"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Clear All</span>
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Table */}
-          <div className="rounded-xl border border-purple-900/40 overflow-hidden shadow-lg bg-[#0e0822]">
-            {filteredRecords.length === 0 ? (
-              <div className="p-8 text-center text-purple-400 text-xs space-y-2">
-                <Calendar className="w-8 h-8 mx-auto text-purple-500/50" />
-                <p>No records found matching your filters.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-purple-900/50 bg-[#160e36] text-purple-300 uppercase tracking-wider font-semibold">
-                      <th className="py-3 px-4">Staff Member</th>
-                      <th className="py-3 px-4">Role</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4">Date & Time</th>
-                      <th className="py-3 px-4">Shift Details</th>
-                      <th className="py-3 px-4 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-purple-950/60">
-                    {filteredRecords.map(record => (
-                      <tr key={record.id} className="hover:bg-purple-950/20 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2.5">
-                            <img
-                              src={record.avatarUrl}
-                              alt={record.staffName}
-                              className="w-7 h-7 rounded-lg bg-purple-950 border border-purple-500/30 object-cover"
-                            />
-                            <div>
-                              <span className="font-bold text-white block">{record.staffName}</span>
-                              <span className="text-[10px] text-purple-400 font-mono">IGN: {record.minecraftIgn}</span>
-                            </div>
-                          </div>
-                        </td>
+            {/* Individual Log Table */}
+            {(() => {
+              const logsToShow =
+                logScope === 'month'
+                  ? selectedStaffDetail.monthMemberRecords
+                  : selectedStaffDetail.allMemberRecords;
 
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded bg-purple-900/40 border border-purple-500/20 text-[10px] font-bold text-purple-300 uppercase font-mono">
-                            {record.staffRole}
-                          </span>
-                        </td>
+              if (logsToShow.length === 0) {
+                return (
+                  <div className="p-8 text-center text-purple-300/70 text-xs space-y-2 bg-[#0b061a]/60 rounded-xl border border-purple-900/30">
+                    <Calendar className="w-8 h-8 mx-auto text-purple-500/40" />
+                    <p>
+                      No attendance logs recorded for <strong>{selectedStaff.name}</strong> in{' '}
+                      {logScope === 'month' ? monthName : 'their history'} yet.
+                    </p>
+                  </div>
+                );
+              }
 
-                        <td className="py-3 px-4">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
-                              record.status === 'present'
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                : 'bg-red-500/20 text-red-300 border border-red-500/40'
-                            }`}
-                          >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                record.status === 'present' ? 'bg-emerald-400' : 'bg-red-400'
-                              }`}
-                            />
-                            {record.status}
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-4 text-purple-200 font-mono">
-                          <div>{record.date}</div>
-                          <div className="text-[10px] text-purple-400">{record.timeFormatted}</div>
-                        </td>
-
-                        <td className="py-3 px-4 text-purple-300/80">
-                          <div>{record.shiftNotes || 'Standard shift'}</div>
-                          {record.shiftDurationHours ? (
-                            <div className="text-[10px] text-amber-400 font-semibold mt-0.5">
-                              Duration: {record.shiftDurationHours} hrs
-                            </div>
-                          ) : null}
-                        </td>
-
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => deleteAttendance(record.id)}
-                            className="p-1.5 rounded-lg text-red-400 hover:text-red-200 hover:bg-red-950/40 transition-colors"
-                            title="Delete Record"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
+              return (
+                <div className="overflow-x-auto rounded-xl border border-purple-900/40 bg-[#0b061a]">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-purple-900/50 bg-[#160e36] text-purple-300 uppercase tracking-wider font-semibold">
+                        <th className="py-3 px-4">Date</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4">Recorded Time (IST)</th>
+                        <th className="py-3 px-4">Shift Details / Notes</th>
+                        {isAdmin && <th className="py-3 px-4 text-right">Admin Action</th>}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody className="divide-y divide-purple-950/60">
+                      {logsToShow.map(record => (
+                        <tr key={record.id} className="hover:bg-purple-950/25 transition-colors">
+                          <td className="py-3 px-4 font-mono font-bold text-white">
+                            {record.date}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+                                record.status === 'present'
+                                  ? 'bg-blue-600/25 text-blue-300 border border-blue-400/50'
+                                  : 'bg-red-600/25 text-red-300 border border-red-500/50'
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  record.status === 'present' ? 'bg-blue-400' : 'bg-red-400'
+                                }`}
+                              />
+                              {record.status === 'present' ? 'Present (Blue)' : 'Absent (Red)'}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-4 font-mono text-purple-200">
+                            {record.timeFormatted || formatISTTime(record.timestamp)}
+                          </td>
+
+                          <td className="py-3 px-4 text-purple-300/90">
+                            <div>{record.shiftNotes || 'Standard shift'}</div>
+                            {record.status === 'present' && record.shiftDurationHours ? (
+                              <div className="text-[10px] text-blue-400 font-mono mt-0.5">
+                                Shift Duration: {record.shiftDurationHours} hrs
+                              </div>
+                            ) : null}
+                          </td>
+
+                          {isAdmin && (
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => deleteAttendance(record.id)}
+                                className="p-1.5 rounded-lg text-red-400 hover:text-red-200 hover:bg-red-950/40 transition-colors cursor-pointer"
+                                title="Delete this attendance log"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -718,7 +1109,7 @@ export const AttendanceView: React.FC = () => {
             <div className="flex gap-2 pt-2">
               <button
                 onClick={() => setConfirmClearModal(false)}
-                className="w-1/2 py-2 rounded-lg bg-purple-950/60 text-purple-300 text-xs"
+                className="w-1/2 py-2 rounded-lg bg-purple-950/60 text-purple-300 text-xs cursor-pointer"
               >
                 Cancel
               </button>
@@ -727,7 +1118,7 @@ export const AttendanceView: React.FC = () => {
                   await clearAllAttendance();
                   setConfirmClearModal(false);
                 }}
-                className="w-1/2 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs"
+                className="w-1/2 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs cursor-pointer"
               >
                 Clear Records
               </button>

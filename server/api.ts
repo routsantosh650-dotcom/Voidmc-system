@@ -655,15 +655,16 @@ router.get('/attendance', optionalAuth, (req: AuthenticatedRequest, res: Respons
   res.json({ attendance: sorted });
 });
 
-// Mark own attendance (Present only - system automatically records exact date & time in IST)
+// Mark own attendance (system records exact date & time in IST)
 router.post('/attendance/mark', requireAuth, (req: AuthenticatedRequest, res: Response) => {
-  const { shiftNotes, shiftDurationHours, proofUrl } = req.body;
+  const { status, shiftNotes, shiftDurationHours, proofUrl } = req.body;
 
   const database = db.get();
   const user = req.user!;
   const ist = getISTDateInfo();
   const today = ist.dateStr; // e.g. "2026-09-23" (IST)
   const timeFormatted = `${ist.timeShortStr} IST`; // e.g. "08:00 PM IST"
+  const finalStatus: 'present' | 'absent' = status === 'absent' ? 'absent' : 'present';
 
   // Check if already marked today
   const existingIndex = database.attendance.findIndex(
@@ -678,9 +679,11 @@ router.post('/attendance/mark', requireAuth, (req: AuthenticatedRequest, res: Re
     minecraftIgn: user.minecraftIgn,
     avatarUrl: user.avatarUrl,
     date: today,
-    status: 'present',
-    shiftNotes: shiftNotes?.trim() || 'Active duty shift completed',
-    shiftDurationHours: Number(shiftDurationHours || 2),
+    status: finalStatus,
+    shiftNotes:
+      shiftNotes?.trim() ||
+      (finalStatus === 'present' ? 'Active duty shift completed' : 'Marked absent for shift'),
+    shiftDurationHours: finalStatus === 'present' ? Number(shiftDurationHours || 2) : 0,
     proofUrl: proofUrl || '',
     timestamp: ist.timestamp,
     timeFormatted,
@@ -695,8 +698,8 @@ router.post('/attendance/mark', requireAuth, (req: AuthenticatedRequest, res: Re
   // Create notification for admins
   database.notifications.push({
     id: 'notif_att_' + Date.now(),
-    title: `Attendance Checked In: ${user.name}`,
-    message: `${user.name} (${user.role}) checked in PRESENT on ${today} at ${timeFormatted}.`,
+    title: `Attendance Recorded: ${user.name}`,
+    message: `${user.name} (${user.role}) marked ${finalStatus.toUpperCase()} on ${today} at ${timeFormatted}.`,
     type: 'attendance',
     timestamp: ist.timestamp,
     timeAgo: 'Just now',
@@ -707,7 +710,78 @@ router.post('/attendance/mark', requireAuth, (req: AuthenticatedRequest, res: Re
   db.save();
   res.json({
     success: true,
-    message: `Attendance marked: PRESENT recorded on ${today} at ${timeFormatted}!`,
+    message: `Attendance marked: ${finalStatus.toUpperCase()} recorded on ${today} at ${timeFormatted}!`,
+    attendance: entry,
+  });
+});
+
+// Admin mark / update attendance for any staff member and any date
+router.post('/attendance/admin-mark', requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  const { staffId, date, status, shiftNotes, shiftDurationHours } = req.body;
+  if (!staffId || !date || !status) {
+    return res.status(400).json({ error: 'staffId, date, and status are required.' });
+  }
+
+  const database = db.get();
+  const targetStaff = database.staff.find(s => s.id === staffId);
+  if (!targetStaff) {
+    return res.status(404).json({ error: 'Staff member not found.' });
+  }
+
+  // If status is 'unmarked', remove any record for that staffId & date
+  if (status === 'unmarked') {
+    database.attendance = database.attendance.filter(
+      a => !(a.staffId === staffId && a.date === date)
+    );
+    db.save();
+    return res.json({
+      success: true,
+      message: `Cleared attendance record for ${targetStaff.name} on ${date}.`,
+    });
+  }
+
+  const ist = getISTDateInfo();
+  const timeFormatted = `${ist.timeShortStr} IST`;
+  const finalStatus: 'present' | 'absent' = status === 'absent' ? 'absent' : 'present';
+
+  const existingIndex = database.attendance.findIndex(
+    a => a.staffId === staffId && a.date === date
+  );
+
+  const dateTimestamp = new Date(`${date}T12:00:00+05:30`).getTime() || ist.timestamp;
+
+  const entry: AttendanceEntry = {
+    id: existingIndex >= 0 ? database.attendance[existingIndex].id : `att_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    staffId: targetStaff.id,
+    staffName: targetStaff.name,
+    staffRole: targetStaff.role,
+    minecraftIgn: targetStaff.minecraftIgn,
+    avatarUrl: targetStaff.avatarUrl,
+    date,
+    status: finalStatus,
+    shiftNotes:
+      shiftNotes?.trim() ||
+      (finalStatus === 'present'
+        ? `Marked Present by ${req.user!.name}`
+        : `Marked Absent by ${req.user!.name}`),
+    shiftDurationHours: finalStatus === 'present' ? Number(shiftDurationHours ?? 2) : 0,
+    proofUrl: '',
+    timestamp: dateTimestamp,
+    timeFormatted,
+    reviewedBy: req.user!.name,
+    reviewedAt: `${ist.dateStr} ${timeFormatted}`,
+  };
+
+  if (existingIndex >= 0) {
+    database.attendance[existingIndex] = entry;
+  } else {
+    database.attendance.unshift(entry);
+  }
+
+  db.save();
+  res.json({
+    success: true,
+    message: `${targetStaff.name} marked ${finalStatus.toUpperCase()} for ${date}.`,
     attendance: entry,
   });
 });

@@ -69,6 +69,13 @@ interface VoidMCContextType {
     shiftDurationHours?: number,
     proofUrl?: string
   ) => Promise<{ success: boolean; message: string }>;
+  adminMarkAttendance: (
+    staffId: string,
+    date: string,
+    status: 'present' | 'absent' | 'unmarked',
+    shiftNotes?: string,
+    shiftDurationHours?: number
+  ) => Promise<{ success: boolean; message: string }>;
   updateAttendance: (
     id: string,
     status: 'present' | 'absent',
@@ -507,6 +514,37 @@ export const VoidMCProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return { success: false, message: data.error || 'Failed to mark attendance' };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error marking attendance';
+      return { success: false, message: msg };
+    }
+  };
+
+  const adminMarkAttendance = async (
+    staffId: string,
+    date: string,
+    status: 'present' | 'absent' | 'unmarked',
+    shiftNotes?: string,
+    shiftDurationHours?: number
+  ) => {
+    try {
+      const res = await authFetch('/api/attendance/admin-mark', {
+        method: 'POST',
+        body: JSON.stringify({
+          staffId,
+          date,
+          status,
+          shiftNotes,
+          shiftDurationHours,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        soundFX.playSuccess();
+        loadInitialData();
+        return { success: true, message: data.message };
+      }
+      return { success: false, message: data.error || 'Failed to update attendance' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error updating attendance';
       return { success: false, message: msg };
     }
   };
@@ -976,6 +1014,7 @@ export const VoidMCProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         terminateSession,
         changePassword,
         markAttendance,
+        adminMarkAttendance,
         updateAttendance,
         deleteAttendance,
         clearAllAttendance,

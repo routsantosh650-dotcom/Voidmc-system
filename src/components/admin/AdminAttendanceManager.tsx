@@ -89,14 +89,9 @@ export const AdminAttendanceManager: React.FC = () => {
         const dayStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const record = records.find(r => r.date === dayStr);
 
-        const isFuture = isCurrentMonth ? day > currentDay : false;
-        const isToday = isCurrentMonth && day === currentDay;
-
         if (record && record.status === 'present') {
           presentDates.push(dayStr);
         } else if (record && record.status === 'absent') {
-          absentDates.push(dayStr);
-        } else if (!isToday && !isFuture) {
           absentDates.push(dayStr);
         }
       }

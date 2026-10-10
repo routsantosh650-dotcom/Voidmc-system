@@ -1,0 +1,115 @@
+{
+  "staff": [
+    {
+      "id": "staff-owner-ansh",
+      "username": "elite ansh",
+      "name": "Elite ansh",
+      "minecraftIgn": "Elite_Ansh",
+      "role": "OWNER",
+      "department": "Executive",
+      "passwordHash": "c0cad68abb373f1d689cba50f4ba687b9fdafa88d6ae7b9c8fdb0345f578e947f2f90672b7f5d9bf0891e5ffafb6a6f5442f0f55949ff72bdec253e5950ba58b",
+      "salt": "b22b94bc4d5ee95bcdd4402f7e2a860c",
+      "avatarUrl": "https://minotar.net/helm/Elite_Ansh/100.png",
+      "status": "active",
+      "joinedDate": "2024-01-01",
+      "isAdmin": true,
+      "lastActive": "Just now"
+    },
+    {
+      "id": "staff-coowner-obito",
+      "username": "obito uchiha",
+      "name": "obito uchiha",
+      "minecraftIgn": "Obito_Uchiha",
+      "role": "CO OWNER",
+      "department": "Executive",
+      "passwordHash": "082ac9a9f3eace1d1f885521abcea5f8beb81ceeaa70f93f512c7cfbca7fd04d2c7247b2dd732418031d6fc9597a7ecf8a1c9649695db07199548134b2671582",
+      "salt": "a8697ba70e85cf23589b15bbe8c38913",
+      "avatarUrl": "https://minotar.net/helm/Obito_Uchiha/100.png",
+      "status": "active",
+      "joinedDate": "2024-01-05",
+      "isAdmin": true,
+      "lastActive": "Just now"
+    },
+    {
+      "id": "staff-manager-santosh",
+      "username": "santosh rout",
+      "name": "Santosh Rout",
+      "minecraftIgn": "Santosh_Rout",
+      "role": "STAFF MANAGER",
+      "department": "Management",
+      "passwordHash": "f44b59ab0037da3f884e4c7c5ffa143a7630f1c06f95be7446d245ee0abe57b081c967c5b4101b71cdc9777b2433061ca690ab2a4df33de8a6be882228e6bd19",
+      "salt": "e900455f0da354bc1e1fafc98163c9b3",
+      "avatarUrl": "https://minotar.net/helm/Santosh_Rout/100.png",
+      "status": "active",
+      "joinedDate": "2024-01-10",
+      "isAdmin": true,
+      "lastActive": "Just now"
+    },
+    {
+      "id": "staff-mod-shadow",
+      "username": "shadow",
+      "name": "ShadowMC",
+      "minecraftIgn": "ShadowMC_",
+      "role": "MC MODS",
+      "department": "Moderation",
+      "passwordHash": "dfbfe070e7e338df117e07ceeb60f985897bc8f47cfc6a6dc82eb4d5dfb6eb1fcf82625876cef6e8ddff388656d3b8b917a3b90be5ba04396ec359c2c698037c",
+      "salt": "25d7e367c3adc8cec3461d8c3cbcfbb7",
+      "avatarUrl": "https://minotar.net/helm/ShadowMC_/100.png",
+      "status": "active",
+      "joinedDate": "2024-02-01",
+      "isAdmin": false,
+      "lastActive": "10 mins ago"
+    },
+    {
+      "id": "staff-helper-aura",
+      "username": "auraknight",
+      "name": "AuraKnight",
+      "minecraftIgn": "Aura_Knight",
+      "role": "MC HELPER",
+      "department": "Support",
+      "passwordHash": "dfbfe070e7e338df117e07ceeb60f985897bc8f47cfc6a6dc82eb4d5dfb6eb1fcf82625876cef6e8ddff388656d3b8b917a3b90be5ba04396ec359c2c698037c",
+      "salt": "25d7e367c3adc8cec3461d8c3cbcfbb7",
+      "avatarUrl": "https://minotar.net/helm/Aura_Knight/100.png",
+      "status": "active",
+      "joinedDate": "2024-03-01",
+      "isAdmin": false,
+      "lastActive": "1 hour ago"
+    }
+  ],
+  "sessions": [],
+  "attendance": [],
+  "announcements": [
+    {
+      "id": "ann-welcome",
+      "title": "VoidMC SMP Staff Command System Online",
+      "content": "Welcome to the official VoidMC SMP Staff Management & Command Portal. All staff members are required to log their daily shift attendance under the Attendance section.",
+      "author": "Santosh Rout",
+      "authorRole": "STAFF MANAGER",
+      "tag": "IMPORTANT",
+      "isPinned": true,
+      "createdAt": "Today",
+      "timestamp": 1791568365585
+    }
+  ],
+  "strikes": [],
+  "notifications": [
+    {
+      "id": "notif-welcome",
+      "title": "System Initialized",
+      "message": "VoidMC SMP Staff Command initialized with clean records and secure authentication.",
+      "type": "system",
+      "timestamp": 1791568365585,
+      "timeAgo": "Just now",
+      "readBy": [],
+      "linkTab": "dashboard"
+    }
+  ],
+  "applications": [],
+  "settings": {
+    "serverIp": "play.voidmc.fun",
+    "maintenanceMode": false,
+    "requireAttendanceProof": false,
+    "autoSessionTimeoutHours": 24,
+    "allowSelfAttendance": true
+  }
+}
